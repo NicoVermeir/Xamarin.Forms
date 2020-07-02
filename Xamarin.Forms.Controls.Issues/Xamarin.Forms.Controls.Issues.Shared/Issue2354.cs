@@ -12,32 +12,39 @@ using Xamarin.UITest;
 
 namespace Xamarin.Forms.Controls.Issues
 {
-	[Preserve (AllMembers = true)]
-	[Issue(IssueTracker.Github, 2354, "ListView, ImageCell and disabled source cache and same image url",PlatformAffected.iOS | PlatformAffected.Android)]
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
+#endif
+	[Preserve(AllMembers = true)]
+	[Issue(IssueTracker.Github, 2354, "ListView, ImageCell and disabled source cache and same image url", PlatformAffected.iOS | PlatformAffected.Android)]
 	public class Issue2354 : TestContentPage
 	{
-		protected override void Init ()
+		protected override void Init()
 		{
-			var presidents = new List<President> ();
-			for (int i = 0; i < 10; i++) {
-				presidents.Add (new President ($"Presidente {44 - i}", 1, $"http://static.c-span.org/assets/images/series/americanPresidents/{43 - i}_400.png"));
+			var presidents = new List<President>();
+			for (int i = 0; i < 10; i++)
+			{
+				presidents.Add(new President($"Presidente {44 - i}", 1, $"http://static.c-span.org/assets/images/series/americanPresidents/{43 - i}_400.png"));
 			}
-						
-			var header = new Label {
+
+			var header = new Label
+			{
 				Text = "Presidents",
 				HorizontalOptions = LayoutOptions.Center
 			};
 
-			var cell = new DataTemplate (typeof(CustomCell));
+			var cell = new DataTemplate(typeof(CustomCell));
 
-			var listView = new ListView {
+			var listView = new ListView(ListViewCachingStrategy.RecycleElement)
+			{
 				ItemsSource = presidents,
 				ItemTemplate = cell,
 				RowHeight = 200
 			};
 
-		
-			Content = new StackLayout {
+
+			Content = new StackLayout
+			{
 				Children = {
 					header,
 					listView
@@ -45,9 +52,10 @@ namespace Xamarin.Forms.Controls.Issues
 			};
 		}
 
+		[Preserve(AllMembers = true)]
 		public class President
 		{
-			public President (string name, int position, string image)
+			public President(string name, int position, string image)
 			{
 				Name = name;
 				Position = position;
@@ -62,7 +70,7 @@ namespace Xamarin.Forms.Controls.Issues
 		}
 
 
-		[Preserve (AllMembers = true)]
+		[Preserve(AllMembers = true)]
 		public class CustomCell : ViewCell
 		{
 			public CustomCell()
@@ -70,10 +78,12 @@ namespace Xamarin.Forms.Controls.Issues
 				var image = new Image
 				{
 					HorizontalOptions = LayoutOptions.Start,
-					Aspect = Aspect.AspectFill
+					Aspect = Aspect.AspectFill,
+					AutomationId = "ImageLoaded",
 				};
 
-				var source = new UriImageSource {
+				var source = new UriImageSource
+				{
 					CachingEnabled = false,
 				};
 
@@ -86,12 +96,13 @@ namespace Xamarin.Forms.Controls.Issues
 			}
 		}
 
+		[Preserve(AllMembers = true)]
 		public class UriConverter : IValueConverter
 		{
 
 			public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
 			{
-				return new Uri((string) value);
+				return new Uri((string)value);
 			}
 
 			public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
@@ -103,10 +114,11 @@ namespace Xamarin.Forms.Controls.Issues
 
 #if UITEST
 		[Test]
-		public void TestDoesntCrashWithCachingDisable ()
+		public void TestDoesntCrashWithCachingDisable()
 		{
-			RunningApp.ScrollDown ();
-			RunningApp.ScrollDown ();
+			RunningApp.WaitForElement("ImageLoaded");
+			RunningApp.ScrollDown();
+			RunningApp.ScrollDown();
 		}
 #endif
 

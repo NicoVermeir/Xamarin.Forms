@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Xamarin.Forms.Internals;
+using IOPath = System.IO.Path;
 
 namespace Xamarin.Forms
 {
@@ -101,7 +101,7 @@ namespace Xamarin.Forms
 
 		static string GetCacheKey(Uri uri)
 		{
-			return Device.PlatformServices.GetMD5Hash(uri.AbsoluteUri);
+			return Device.PlatformServices.GetHash(uri.AbsoluteUri);
 		}
 
 		async Task<bool> GetHasLocallyCachedCopyAsync(string key, bool checkValidity = true)
@@ -113,7 +113,7 @@ namespace Xamarin.Forms
 
 		static async Task<DateTime?> GetLastWriteTimeUtcAsync(string key)
 		{
-			string path = Path.Combine(CacheName, key);
+			string path = IOPath.Combine(CacheName, key);
 			if (!await Store.GetFileExistsAsync(path).ConfigureAwait(false))
 				return null;
 
@@ -124,8 +124,12 @@ namespace Xamarin.Forms
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 
-			Stream stream;
-			if (!CachingEnabled)
+			Stream stream = null;
+
+			if(CachingEnabled)
+				stream = await GetStreamFromCacheAsync(uri, cancellationToken).ConfigureAwait(false);
+
+			if (stream == null)
 			{
 				try
 				{
@@ -137,8 +141,7 @@ namespace Xamarin.Forms
 					stream = null;
 				}
 			}
-			else
-				stream = await GetStreamFromCacheAsync(uri, cancellationToken).ConfigureAwait(false);
+
 			return stream;
 		}
 
@@ -152,7 +155,7 @@ namespace Xamarin.Forms
 					int backoff;
 					try
 					{
-						Stream result = await Store.OpenFileAsync(Path.Combine(CacheName, key), FileMode.Open, FileAccess.Read).ConfigureAwait(false);
+						Stream result = await Store.OpenFileAsync(IOPath.Combine(CacheName, key), FileMode.Open, FileAccess.Read).ConfigureAwait(false);
 						return result;
 					}
 					catch (IOException)
@@ -183,14 +186,28 @@ namespace Xamarin.Forms
 				return null;
 			}
 
-			Stream writeStream = await Store.OpenFileAsync(Path.Combine(CacheName, key), FileMode.Create, FileAccess.Write).ConfigureAwait(false);
-			await stream.CopyToAsync(writeStream, 16384, cancellationToken).ConfigureAwait(false);
-			if (writeStream != null)
-				writeStream.Dispose();
+			if (stream == null || !stream.CanRead)
+			{
+				stream?.Dispose();
+				return null;
+			}
 
-			stream.Dispose();
+			try
+			{
+				Stream writeStream = await Store.OpenFileAsync(IOPath.Combine(CacheName, key), FileMode.Create, FileAccess.Write).ConfigureAwait(false);
+				await stream.CopyToAsync(writeStream, 16384, cancellationToken).ConfigureAwait(false);
+				if (writeStream != null)
+					writeStream.Dispose();
 
-			return await Store.OpenFileAsync(Path.Combine(CacheName, key), FileMode.Open, FileAccess.Read).ConfigureAwait(false);
+				stream.Dispose();
+
+				return await Store.OpenFileAsync(IOPath.Combine(CacheName, key), FileMode.Open, FileAccess.Read).ConfigureAwait(false);
+			}
+			catch (Exception ex)
+			{
+				Log.Warning("Image Loading", $"Error getting stream for {Uri}: {ex}");
+				return null;
+			}
 		}
 
 		async Task<Stream> GetStreamFromCacheAsync(Uri uri, CancellationToken cancellationToken)
@@ -209,7 +226,7 @@ namespace Xamarin.Forms
 			{
 				await sem.WaitAsync(cancellationToken);
 				Stream stream = await GetStreamAsyncUnchecked(key, uri, cancellationToken);
-				if (stream == null)
+				if (stream == null || stream.Length == 0 || !stream.CanRead)
 				{
 					sem.Release();
 					return null;

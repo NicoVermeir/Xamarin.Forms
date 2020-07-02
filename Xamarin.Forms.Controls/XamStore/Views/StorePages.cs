@@ -19,8 +19,11 @@ namespace Xamarin.Forms.Controls.XamStore
 
 		public BasePage(string title, Color tint)
 		{
+			ToolbarItems.Add(new ToolbarItem() { Text = "text" });
+			ToolbarItems.Add(new ToolbarItem() { IconImageSource = "coffee.png" });
+
 			Title = title;
-			Shell.SetShellForegroundColor(this, tint);
+			Shell.SetForegroundColor(this, tint);
 			var grid = new Grid()
 			{
 				Padding = 20,
@@ -198,6 +201,10 @@ namespace Xamarin.Forms.Controls.XamStore
 					RemoveTopTab),
 				1, 13);
 
+			grid.Children.Add(MakeButton("Flow Direction",
+					ChangeFlowDirection),
+				2, 13);
+
 			grid.Children.Add(MakeSwitch("Nav Visible", out _navBarVisibleSwitch), 0, 14);
 			grid.Children.Add(MakeSwitch("Tab Visible", out _tabBarVisibleSwitch), 1, 14);
 
@@ -223,7 +230,7 @@ namespace Xamarin.Forms.Controls.XamStore
 			grid.Children.Add(MakeButton("Go Back with Text",
 			async () => {
 					var page = (Page)Activator.CreateInstance(GetType());
-					Shell.SetShellForegroundColor(page, Color.Pink);
+					Shell.SetForegroundColor(page, Color.Pink);
 					Shell.SetBackButtonBehavior(page, new BackButtonBehavior()
 					{
 						//IconOverride = "calculator.png",
@@ -243,12 +250,80 @@ namespace Xamarin.Forms.Controls.XamStore
 				async () => await Shell.Current.GoToAsync(navEntry.Text, true)),
 			2, 16);
 
+			var headerWidth = new Slider
+			{
+				Minimum = 0,
+				Maximum = 400,
+				Value = (Shell.Current.FlyoutHeader as VisualElement)?.HeightRequest ?? 0
+			};
+			headerWidth.ValueChanged += (_, e) =>
+			{
+				if (Shell.Current.FlyoutHeader is VisualElement ve)
+					ve.HeightRequest = e.NewValue;
+			};
+			grid.Children.Add(new Label
+			{
+				Text = "fly Header",
+				VerticalOptions = LayoutOptions.CenterAndExpand
+			}, 0, 17);
+			grid.Children.Add(headerWidth, 1, 17);
+
+			grid.Children.Add(MakeButton("bg image",
+				() => Shell.Current.FlyoutBackgroundImage = ImageSource.FromFile("photo.jpg")),
+			0, 18);
+			grid.Children.Add(MakeButton("bg color",
+				() => Shell.Current.FlyoutBackgroundColor = Color.DarkGreen),
+			1, 18);
+			grid.Children.Add(MakeButton("bg aFit",
+				() => Shell.Current.FlyoutBackgroundImageAspect = Aspect.AspectFit),
+			2, 18);
+			grid.Children.Add(MakeButton("bg aFill",
+				() => Shell.Current.FlyoutBackgroundImageAspect = Aspect.AspectFill),
+			0, 19);
+			grid.Children.Add(MakeButton("bg Fill",
+				() => Shell.Current.FlyoutBackgroundImageAspect = Aspect.Fill),
+			1, 19);
+			grid.Children.Add(MakeButton("clear bg",
+				() => {
+					Shell.Current.ClearValue(Shell.FlyoutBackgroundColorProperty);
+					Shell.Current.ClearValue(Shell.FlyoutBackgroundImageProperty);
+				}),
+			2, 19);
+
+			Entry flyheaderMargin = new Entry();
+			flyheaderMargin.TextChanged += (_, __) =>
+			{
+				int topMargin;
+				if (Int32.TryParse(flyheaderMargin.Text, out topMargin))
+					(Shell.Current.FlyoutHeader as View).Margin = new Thickness(0, topMargin, 0, 0);
+				else
+					(Shell.Current.FlyoutHeader as View).ClearValue(View.MarginProperty);
+			};
+
+
+			grid.Children.Add(new Label() { Text = "FH Top Margin" }, 0, 20);
+			grid.Children.Add(flyheaderMargin, 1, 20);
+
 			Content = new ScrollView { Content = grid };
 
-			//var listView = new ListView();
-			//listView.ItemsSource = Enumerable.Range(0, 1000).ToList();
 
-			//Content = listView;
+			//grid.Children.Add(MakeButton("FlyoutBackdrop Color",
+			//		() =>
+			//		{
+			//			if (Shell.GetFlyoutBackdropColor(Shell.Current) == Color.Default)
+			//				Shell.SetFlyoutBackdropColor(Shell.Current, Color.Purple);
+			//			else
+			//				Shell.SetFlyoutBackdropColor(Shell.Current, Color.Default);
+			//		}),
+			//	0, 21);
+
+			grid.Children.Add(MakeButton("Hide Nav Shadow",
+                    () => Shell.SetNavBarHasShadow(this, false)),
+                1, 21);
+
+            grid.Children.Add(MakeButton("Show Nav Shadow",
+                    () => Shell.SetNavBarHasShadow(this, true)),
+                2, 21);
 		}
 
 		Switch _navBarVisibleSwitch;
@@ -264,6 +339,16 @@ namespace Xamarin.Forms.Controls.XamStore
 					(control = new Switch {IsToggled = true})
 				}
 			};
+		}
+
+		private void ChangeFlowDirection()
+		{
+			var ve = (Shell)Parent.Parent.Parent.Parent;
+
+			if (ve.FlowDirection != FlowDirection.RightToLeft)
+				ve.FlowDirection = FlowDirection.RightToLeft;
+			else
+				ve.FlowDirection = FlowDirection.LeftToRight;
 		}
 
 		private void RemoveTopTab()
@@ -343,7 +428,17 @@ namespace Xamarin.Forms.Controls.XamStore
 		{
 			var searchHandler = new CustomSearchHandler();
 
+			searchHandler.BackgroundColor = Color.Orange;
+			searchHandler.CancelButtonColor = Color.Pink;
+			searchHandler.TextColor = Color.White;
+			searchHandler.PlaceholderColor = Color.Yellow;
+			searchHandler.HorizontalTextAlignment = TextAlignment.Center;
 			searchHandler.ShowsResults = true;
+
+			searchHandler.Keyboard = Keyboard.Numeric;
+
+			searchHandler.FontFamily = "ChalkboardSE-Regular";
+			searchHandler.FontAttributes = FontAttributes.Bold;
 
 			searchHandler.ClearIconName = "Clear";
 			searchHandler.ClearIconHelpText = "Clears the search field text";
@@ -411,7 +506,7 @@ namespace Xamarin.Forms.Controls.XamStore
 	[Preserve (AllMembers = true)]
 	public class HomePage : BasePage
 	{
-		public HomePage() : base("Store Home", Color.Default)
+		public HomePage() : base("Store Home", Color.Black)
 		{
 			AddSearchHandler("Search Apps", SearchBoxVisibility.Expanded);
 		}
@@ -420,7 +515,7 @@ namespace Xamarin.Forms.Controls.XamStore
 	[Preserve (AllMembers = true)]
 	public class GamesPage : BasePage
 	{
-		public GamesPage() : base("Games", Color.Default)
+		public GamesPage() : base("Games", Color.Black)
 		{
 			AddSearchHandler("Search Games", SearchBoxVisibility.Expanded);
 		}

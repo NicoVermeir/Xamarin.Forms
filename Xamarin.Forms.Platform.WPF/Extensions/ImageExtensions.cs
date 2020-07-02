@@ -1,34 +1,26 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Media;
 using Xamarin.Forms.Internals;
 using WImageSource = System.Windows.Media.ImageSource;
+using WStretch = System.Windows.Media.Stretch;
 
 namespace Xamarin.Forms.Platform.WPF
 {
-	internal static class ImageExtensions
+	public static class ImageExtensions
 	{
-		public static Stretch ToStretch(this Aspect aspect)
+		public static WStretch ToStretch(this Aspect aspect)
 		{
 			switch (aspect)
 			{
 				case Aspect.Fill:
-					return Stretch.Fill;
+					return WStretch.Fill;
 				case Aspect.AspectFill:
-					return Stretch.UniformToFill;
+					return WStretch.UniformToFill;
 				default:
 				case Aspect.AspectFit:
-					return Stretch.Uniform;
+					return WStretch.Uniform;
 			}
-		}
-
-		public static WImageSource ToWindowsImageSource(this ImageSource source)
-		{
-			return source.ToWindowsImageSourceAsync().GetAwaiter().GetResult();
 		}
 
 		public static async Task<WImageSource> ToWindowsImageSourceAsync(this ImageSource source, CancellationToken cancellationToken = default(CancellationToken))

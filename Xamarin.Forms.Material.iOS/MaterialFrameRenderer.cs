@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 using CoreAnimation;
 using CoreGraphics;
 using MaterialComponents;
@@ -15,14 +16,16 @@ namespace Xamarin.Forms.Material.iOS
 	{
 		CardScheme _defaultCardScheme;
 		CardScheme _cardScheme;
-		nfloat _defaultCornerRadius = -1f;
+		float _defaultCornerRadius = -1;
 		VisualElementPackager _packager;
 		VisualElementTracker _tracker;
+		EventTracker _events;
+
 		bool _disposed = false;
 
 		public event EventHandler<VisualElementChangedEventArgs> ElementChanged;
 		public Frame Element { get; private set; }
-		
+
 		public override void WillRemoveSubview(UIView uiview)
 		{
 			var content = Element?.Content;
@@ -82,17 +85,23 @@ namespace Xamarin.Forms.Material.iOS
 					_packager.Load();
 
 					_tracker = new VisualElementTracker(this);
+
+					_events = new EventTracker(this);
+					_events.LoadEvents(this);
 				}
 
 				Element.PropertyChanged += OnElementPropertyChanged;
 
-				UpdateCornerRadius();
-				UpdateBorderColor();
-				UpdateBackgroundColor();
 				ApplyTheme();
 			}
 
 			OnElementChanged(new VisualElementChangedEventArgs(oldElement, element));
+
+			if (element != null)
+				element.SendViewInitialized(this);
+
+			if (!string.IsNullOrEmpty(element?.AutomationId))
+				AccessibilityIdentifier = element.AutomationId;
 		}
 
 		protected override void Dispose(bool disposing)
@@ -103,29 +112,40 @@ namespace Xamarin.Forms.Material.iOS
 				if (_packager == null)
 					return;
 
-				SetElement(null);
-
 				_packager.Dispose();
 				_packager = null;
 
 				_tracker.Dispose();
 				_tracker = null;
+
+				_events.Dispose();
+				_events = null;
+				
+				if (Element != null)
+				{
+					Element.ClearValue(Platform.iOS.Platform.RendererProperty);
+					SetElement(null);
+				}
 			}
 
 			base.Dispose(disposing);
 		}
 
+
 		protected virtual CardScheme CreateCardScheme()
 		{
 			return new CardScheme
 			{
-				ColorScheme = MaterialColors.Light.CreateColorScheme(),
-				ShapeScheme = new ShapeScheme(),
+				ColorScheme = MaterialColors.Light.CreateColorScheme()
 			};
 		}
 
 		protected virtual void ApplyTheme()
 		{
+			UpdateCornerRadius();
+			UpdateBorderColor();
+			UpdateBackgroundColor();
+
 			if (Element.BorderColor.IsDefault)
 				CardThemer.ApplyScheme(_cardScheme, this);
 			else
@@ -135,8 +155,21 @@ namespace Xamarin.Forms.Material.iOS
 			if (!Element.HasShadow)
 				SetShadowElevation(0, UIControlState.Normal);
 
-			// this is set in the theme, so we must always disable it
-			Interactable = false;
+			if (Element.GestureRecognizers != null && Element.GestureRecognizers.Any())
+			{
+				Interactable = true;
+
+				// disable ink (ripple) and elevation effect while tapped
+				InkView.Hidden = true;
+				if (Element.HasShadow)
+					SetShadowElevation(1f, UIControlState.Highlighted);
+			}
+			else
+			{
+				// this is set in the theme, so we must always disable it		
+				Interactable = false;
+			}
+
 		}
 
 		protected virtual void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -150,16 +183,14 @@ namespace Xamarin.Forms.Material.iOS
 			}
 			else if (e.PropertyName == Xamarin.Forms.Frame.CornerRadiusProperty.PropertyName)
 			{
-				UpdateCornerRadius();
+				updatedTheme = true;
 			}
 			else if (e.PropertyName == Xamarin.Forms.Frame.BorderColorProperty.PropertyName)
 			{
-				UpdateBorderColor();
 				updatedTheme = true;
 			}
 			else if (e.PropertyName == VisualElement.BackgroundColorProperty.PropertyName)
 			{
-				UpdateBackgroundColor();
 				updatedTheme = true;
 			}
 
@@ -173,13 +204,25 @@ namespace Xamarin.Forms.Material.iOS
 		{
 			// set the default radius on the first time
 			if (_defaultCornerRadius < 0)
-				_defaultCornerRadius = CornerRadius;
+				_defaultCornerRadius = (float)MaterialColors.kFrameCornerRadiusDefault;
 
 			var cornerRadius = Element.CornerRadius;
 			if (cornerRadius < 0)
-				CornerRadius = _defaultCornerRadius;
-			else
-				CornerRadius = cornerRadius;
+				cornerRadius = _defaultCornerRadius;
+
+			if (_cardScheme != null)
+			{
+				var shapeScheme = new ShapeScheme();
+				var shapeCategory = new ShapeCategory(ShapeCornerFamily.Rounded, cornerRadius);
+
+				shapeScheme.SmallComponentShape = shapeCategory;
+				shapeScheme.MediumComponentShape = shapeCategory;
+				shapeScheme.LargeComponentShape = shapeCategory;
+
+				_cardScheme.ShapeScheme = shapeScheme;
+			}
+
+			CornerRadius = cornerRadius;
 		}
 
 		void UpdateBorderColor()
@@ -191,6 +234,8 @@ namespace Xamarin.Forms.Material.iOS
 					colorScheme.OnSurfaceColor = _defaultCardScheme.ColorScheme.OnSurfaceColor;
 				else
 					colorScheme.OnSurfaceColor = borderColor.ToUIColor();
+
+				SetBorderWidth(borderColor.IsDefault ? 0f : 1f, UIControlState.Normal);
 			}
 		}
 

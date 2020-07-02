@@ -14,8 +14,8 @@ namespace Xamarin.Forms.Platform.Android
 	public abstract class TimePickerRendererBase<TControl> : ViewRenderer<TimePicker, TControl>, TimePickerDialog.IOnTimeSetListener, IPickerRenderer
 		where TControl : global::Android.Views.View
 	{
-		int _originalHintTextColor;
 		AlertDialog _dialog;
+		bool _disposed;
 
 		bool Is24HourView
 		{
@@ -58,25 +58,32 @@ namespace Xamarin.Forms.Platform.Android
 				var textField = CreateNativeControl();
 
 				SetNativeControl(textField);
-				_originalHintTextColor = EditText.CurrentHintTextColor;
 			}
 
 			SetTime(e.NewElement.Time);
 			UpdateTextColor();
+			UpdateCharacterSpacing();
 			UpdateFont();
 
-			if ((int)Build.VERSION.SdkInt > 16)
+			if ((int)Forms.SdkInt > 16)
 				Control.TextAlignment = global::Android.Views.TextAlignment.ViewStart;
 		}
 
 		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
+			if (this.IsDisposed())
+			{
+				return;
+			}
+
 			base.OnElementPropertyChanged(sender, e);
 
 			if (e.PropertyName == TimePicker.TimeProperty.PropertyName || e.PropertyName == TimePicker.FormatProperty.PropertyName)
 				SetTime(Element.Time);
 			else if (e.PropertyName == TimePicker.TextColorProperty.PropertyName)
 				UpdateTextColor();
+			else if (e.PropertyName == TimePicker.CharacterSpacingProperty.PropertyName)
+				UpdateCharacterSpacing();
 			else if (e.PropertyName == TimePicker.FontAttributesProperty.PropertyName || e.PropertyName == TimePicker.FontFamilyProperty.PropertyName || e.PropertyName == TimePicker.FontSizeProperty.PropertyName)
 				UpdateFont();
 		}
@@ -86,7 +93,12 @@ namespace Xamarin.Forms.Platform.Android
 			base.OnFocusChangeRequested(sender, e);
 
 			if (e.Focus)
-				CallOnClick();
+			{
+				if (Clickable)
+					CallOnClick();
+				else
+					((IPickerRenderer)this)?.OnClick();
+			}
 			else if (_dialog != null)
 			{
 				_dialog.Hide();
@@ -95,6 +107,7 @@ namespace Xamarin.Forms.Platform.Android
 				if (Forms.IsLollipopOrNewer)
 					_dialog.CancelEvent -= OnCancelButtonClicked;
 
+				_dialog?.Dispose();
 				_dialog = null;
 			}
 		}
@@ -107,6 +120,27 @@ namespace Xamarin.Forms.Platform.Android
 				dialog.CancelEvent += OnCancelButtonClicked;
 
 			return dialog;
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			if (_disposed)
+			{
+				return;
+			}
+
+			_disposed = true;
+
+			if (disposing)
+			{
+				if (Forms.IsLollipopOrNewer && _dialog.IsAlive())
+					_dialog.CancelEvent -= OnCancelButtonClicked;
+
+				_dialog?.Dispose();
+				_dialog = null;
+			}
+
+			base.Dispose(disposing);
 		}
 
 		void IPickerRenderer.OnClick()
@@ -128,7 +162,6 @@ namespace Xamarin.Forms.Platform.Android
 			Element.Unfocus();
 		}
 
-
 		void SetTime(TimeSpan time)
 		{
 			var timeFormat = Is24HourView ? "HH:mm" : Element.Format;
@@ -141,7 +174,15 @@ namespace Xamarin.Forms.Platform.Android
 			EditText.Typeface = Element.ToTypeface();
 			EditText.SetTextSize(ComplexUnitType.Sp, (float)Element.FontSize);
 		}
-		
+
+		void UpdateCharacterSpacing()
+		{
+			if (Forms.IsLollipopOrNewer)
+			{
+				EditText.LetterSpacing = Element.CharacterSpacing.ToEm();
+			}
+		}
+
 		abstract protected void UpdateTextColor();
 	}
 
@@ -168,6 +209,5 @@ namespace Xamarin.Forms.Platform.Android
 			_textColorSwitcher = _textColorSwitcher ?? new TextColorSwitcher(EditText.TextColors, Element.UseLegacyColorManagement());
 			_textColorSwitcher.UpdateTextColor(EditText, Element.TextColor);
 		}
-	}
-
+    }
 }

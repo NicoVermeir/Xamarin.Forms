@@ -31,12 +31,11 @@ namespace Xamarin.Forms
 			lock (s_dependencyLock)
 			{
 				Type targetType = typeof(T);
-				if (!DependencyImplementations.ContainsKey(targetType))
+				if (!DependencyImplementations.TryGetValue(targetType, out dependencyImplementation))
 				{
 					Type implementor = FindImplementor(targetType);
-					DependencyImplementations[targetType] = implementor != null ? new DependencyData { ImplementorType = implementor } : null;
+					DependencyImplementations[targetType] = (dependencyImplementation = implementor != null ? new DependencyData { ImplementorType = implementor } : null);
 				}
-				dependencyImplementation = DependencyImplementations[targetType];
 			}
 
 			if (dependencyImplementation == null)
@@ -77,11 +76,20 @@ namespace Xamarin.Forms
 				DependencyImplementations[targetType] = new DependencyData { ImplementorType = implementorType };
 		}
 
-		static Type FindImplementor(Type target)
+		public static void RegisterSingleton<T>(T instance) where T : class
 		{
-			return DependencyTypes.FirstOrDefault(t => target.IsAssignableFrom(t));
+			Type targetType = typeof(T);
+			Type implementorType = typeof(T);
+			if (!DependencyTypes.Contains(targetType))
+				DependencyTypes.Add(targetType);
+
+			lock (s_dependencyLock)
+				DependencyImplementations[targetType] = new DependencyData { ImplementorType = implementorType, GlobalInstance = instance };
 		}
 
+		static Type FindImplementor(Type target) =>
+			DependencyTypes.FirstOrDefault(t => target.IsAssignableFrom(t));
+	
 		static void Initialize()
 		{
 			if (s_initialized)
@@ -112,33 +120,15 @@ namespace Xamarin.Forms
 				if (s_initialized)
 					return;
 
-				Type targetAttrType = typeof(DependencyAttribute);
-
 				// Don't use LINQ for performance reasons
 				// Naive implementation can easily take over a second to run
 				foreach (Assembly assembly in assemblies)
 				{
-					object[] attributes;
-					try
-					{
-#if NETSTANDARD2_0
-						attributes = assembly.GetCustomAttributes(targetAttrType, true);
-#else
-						attributes = assembly.GetCustomAttributes(targetAttrType).ToArray();
-#endif
-					}
-					catch (System.IO.FileNotFoundException)
-					{
-						// Sometimes the previewer doesn't actually have everything required for these loads to work
-						Log.Warning(nameof(Registrar), "Could not load assembly: {0} for Attibute {1} | Some renderers may not be loaded", assembly.FullName, targetAttrType.FullName);
-						continue;
-					}
-
-					var length = attributes.Length;
-					if (length == 0)
+					object[] attributes = assembly.GetCustomAttributesSafe(typeof(DependencyAttribute));
+					if (attributes == null)
 						continue;
 
-					for (int i = 0; i < length; i++)
+					for (int i = 0; i < attributes.Length; i++)
 					{
 						DependencyAttribute attribute = (DependencyAttribute)attributes[i];
 						if (!DependencyTypes.Contains(attribute.Implementor))

@@ -5,13 +5,15 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Xamarin.Forms.Internals;
+using Xamarin.Forms.Platform.WPF.Controls;
 using WButton = System.Windows.Controls.Button;
 using WImage = System.Windows.Controls.Image;
 using WThickness = System.Windows.Thickness;
+using WAutomationProperties = System.Windows.Automation.AutomationProperties;
 
 namespace Xamarin.Forms.Platform.WPF
 {
-	public class ButtonRenderer : ViewRenderer<Button, WButton>
+	public class ButtonRenderer : ViewRenderer<Button, FormsButton>
 	{
 		bool _fontApplied;
 
@@ -21,7 +23,7 @@ namespace Xamarin.Forms.Platform.WPF
 			{
 				if (Control == null) // construct and SetNativeControl and suscribe control event
 				{
-					SetNativeControl(new WButton());
+					SetNativeControl(new FormsButton());
 					Control.Click += HandleButtonClick;
 				}
 
@@ -33,8 +35,14 @@ namespace Xamarin.Forms.Platform.WPF
 				if (Element.BorderColor != Color.Default)
 					UpdateBorderColor();
 
-				if (Element.BorderWidth != 0)
+				if (Element.IsSet(Button.BorderWidthProperty) && Element.BorderWidth != (double)Button.BorderWidthProperty.DefaultValue)
 					UpdateBorderWidth();
+
+				if (Element.IsSet(Button.CornerRadiusProperty) && Element.CornerRadius != (int)Button.CornerRadiusProperty.DefaultValue)
+					UpdateCornerRadius();
+					
+				if (Element.IsSet(Button.PaddingProperty))
+					UpdatePadding();
 
 				UpdateFont();
 			}
@@ -46,7 +54,9 @@ namespace Xamarin.Forms.Platform.WPF
 		{
 			base.OnElementPropertyChanged(sender, e);
 
-			if (e.PropertyName == Button.TextProperty.PropertyName || e.PropertyName == Button.ImageSourceProperty.PropertyName)
+			if (e.PropertyName == Button.TextProperty.PropertyName || 
+				e.PropertyName == Button.ImageSourceProperty.PropertyName ||
+				e.PropertyName == Button.TextTransformProperty.PropertyName)
 				UpdateContent();
 			else if (e.PropertyName == Button.TextColorProperty.PropertyName)
 				UpdateTextColor();
@@ -55,7 +65,14 @@ namespace Xamarin.Forms.Platform.WPF
 			else if (e.PropertyName == Button.BorderColorProperty.PropertyName)
 				UpdateBorderColor();
 			else if (e.PropertyName == Button.BorderWidthProperty.PropertyName)
+			{
 				UpdateBorderWidth();
+				UpdatePadding();
+			}
+			else if (e.PropertyName == Button.CornerRadiusProperty.PropertyName)
+				UpdateCornerRadius();
+			else if (e.PropertyName == Button.PaddingProperty.PropertyName)
+				UpdatePadding();
 		}
 
 		void HandleButtonClick(object sender, RoutedEventArgs e)
@@ -74,10 +91,14 @@ namespace Xamarin.Forms.Platform.WPF
 		{
 			Control.BorderThickness = Element.BorderWidth <= 0d ? new WThickness(1) : new WThickness(Element.BorderWidth);
 		}
+		void UpdateCornerRadius()
+		{
+			Control.CornerRadius = Element.CornerRadius;
+		}
 
 		async void UpdateContent()
 		{
-			var text = Element.Text;
+			var text = Element.UpdateFormsText(Element.Text, Element.TextTransform);
 			var elementImage = await Element.ImageSource.ToWindowsImageSourceAsync();
 
 			// No image, just the text
@@ -114,6 +135,10 @@ namespace Xamarin.Forms.Platform.WPF
 				VerticalAlignment = VerticalAlignment.Center,
 				HorizontalAlignment = HorizontalAlignment.Center
 			};
+
+			// narrator doesn't pick up text content when nested in a layout so set automation name unless set explicitly
+			if(string.IsNullOrEmpty(WAutomationProperties.GetName(Control)))
+				WAutomationProperties.SetName(Control, text);
 
 			var spacing = layout.Spacing;
 
@@ -184,6 +209,16 @@ namespace Xamarin.Forms.Platform.WPF
 
 			_isDisposed = true;
 			base.Dispose(disposing);
+		}
+
+		void UpdatePadding()
+		{
+			Control.Padding = new WThickness(
+				Element.Padding.Left,
+				Element.Padding.Top,
+				Element.Padding.Right,
+				Element.Padding.Bottom
+			);
 		}
 	}
 }

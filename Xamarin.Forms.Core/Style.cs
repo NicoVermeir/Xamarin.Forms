@@ -10,6 +10,9 @@ namespace Xamarin.Forms
 	{
 		internal const string StyleClassPrefix = "Xamarin.Forms.StyleClass.";
 
+		const int CleanupTrigger = 128;
+		int _cleanupThreshold = CleanupTrigger;
+
 		readonly BindableProperty _basedOnResourceProperty = BindableProperty.CreateAttached("BasedOnResource", typeof(Style), typeof(Style), default(Style),
 			propertyChanged: OnBasedOnResourceChanged);
 
@@ -93,6 +96,8 @@ namespace Xamarin.Forms
 			if (BaseResourceKey != null)
 				bindable.SetDynamicResource(_basedOnResourceProperty, BaseResourceKey);
 			ApplyCore(bindable, BasedOn ?? GetBasedOnResource(bindable));
+
+			CleanUpWeakReferences();
 		}
 
 		public Type TargetType { get; }
@@ -101,11 +106,14 @@ namespace Xamarin.Forms
 		{
 			UnApplyCore(bindable, BasedOn ?? GetBasedOnResource(bindable));
 			bindable.RemoveDynamicResource(_basedOnResourceProperty);
-			_targets.RemoveAll(wr =>
+			lock (_targets)
 			{
-				BindableObject target;
-				return wr.TryGetTarget(out target) && target == bindable;
-			});
+				_targets.RemoveAll(wr =>
+				{
+					BindableObject target;
+					return wr != null && wr.TryGetTarget(out target) && target == bindable;
+				});
+			}
 		}
 
 		internal bool CanBeAppliedTo(Type targetType)
@@ -177,6 +185,20 @@ namespace Xamarin.Forms
 			if (value == null)
 				return true;
 			return value.TargetType.IsAssignableFrom(TargetType);
+		}
+
+		void CleanUpWeakReferences()
+		{
+			if (_targets.Count < _cleanupThreshold)
+			{
+				return;
+			}
+
+			lock (_targets)
+			{
+				_targets.RemoveAll(t => t == null || !t.TryGetTarget(out _));
+				_cleanupThreshold = _targets.Count + CleanupTrigger;
+			}
 		}
 	}
 }

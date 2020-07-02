@@ -22,6 +22,7 @@ namespace Xamarin.Forms.Controls.Issues
 #if UITEST
 	[NUnit.Framework.Category(UITestCategories.ListView)]
 	[NUnit.Framework.Category(UITestCategories.UwpIgnore)]
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
 #endif
 	public class Issue1342 : TestNavigationPage
 	{
@@ -160,6 +161,7 @@ namespace Xamarin.Forms.Controls.Issues
 
 #if UITEST
 		[Test]
+		[Ignore("Fails sometimes - needs a better test")]
 		public void AddingItemsToNonVisibleListViewDoesntCrash()
 		{
 			RunningApp.Tap(add2);

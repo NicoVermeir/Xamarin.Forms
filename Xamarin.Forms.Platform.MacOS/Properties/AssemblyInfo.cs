@@ -1,22 +1,15 @@
-﻿using System.Reflection;
-using System.Runtime.CompilerServices;
-using Xamarin.Forms.Platform.MacOS;
-using Xamarin.Forms;
+﻿using Xamarin.Forms;
 using Xamarin.Forms.Internals;
+using Xamarin.Forms.Platform.MacOS;
+using Xamarin.Forms.Shapes;
+using Rectangle = Xamarin.Forms.Shapes.Rectangle;
 
-[assembly: AssemblyTitle("Xamarin.Forms.Platform.macOS")]
-[assembly: AssemblyDescription("macOS Backend for Xamarin.Forms")]
-[assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCulture("")]
-
-//[assembly: AssemblyDelaySign(false)]
-//[assembly: AssemblyKeyFile("")]
-
-[assembly: Xamarin.Forms.Dependency(typeof(Deserializer))]
-[assembly: Xamarin.Forms.Dependency(typeof(ResourcesProvider))]
+[assembly: Dependency(typeof(Deserializer))]
+[assembly: Dependency(typeof(ResourcesProvider))]
 [assembly: ExportImageSourceHandler(typeof(FileImageSource), typeof(FileImageSourceHandler))]
 [assembly: ExportImageSourceHandler(typeof(StreamImageSource), typeof(StreamImagesourceHandler))]
 [assembly: ExportImageSourceHandler(typeof(UriImageSource), typeof(ImageLoaderSourceHandler))]
+[assembly: ExportImageSourceHandler(typeof(FontImageSource), typeof(FontImageSourceHandler))]
 [assembly: ExportRenderer(typeof(Page), typeof(PageRenderer))]
 [assembly: ExportRenderer(typeof(CarouselPage), typeof(CarouselPageRenderer))]
 [assembly: ExportRenderer(typeof(MasterDetailPage), typeof(MasterDetailPageRenderer))]
@@ -24,6 +17,7 @@ using Xamarin.Forms.Internals;
 [assembly: ExportRenderer(typeof(NavigationPage), typeof(NavigationPageRenderer))]
 [assembly: ExportRenderer(typeof(Label), typeof(LabelRenderer))]
 [assembly: ExportRenderer(typeof(Button), typeof(ButtonRenderer))]
+[assembly: ExportRenderer(typeof(RadioButton), typeof(RadioButtonRenderer))]
 [assembly: ExportRenderer(typeof(BoxView), typeof(BoxViewRenderer))]
 [assembly: ExportRenderer(typeof(ScrollView), typeof(ScrollViewRenderer))]
 [assembly: ExportRenderer(typeof(ActivityIndicator), typeof(ActivityIndicatorRenderer))]
@@ -39,18 +33,24 @@ using Xamarin.Forms.Internals;
 [assembly: ExportRenderer(typeof(Slider), typeof(SliderRenderer))]
 [assembly: ExportRenderer(typeof(Stepper), typeof(StepperRenderer))]
 [assembly: ExportRenderer(typeof(Switch), typeof(SwitchRenderer))]
+[assembly: ExportRenderer(typeof(CheckBox), typeof(CheckBoxRenderer))]
 [assembly: ExportRenderer(typeof(TimePicker), typeof(TimePickerRenderer))]
 [assembly: ExportRenderer(typeof(WebView), typeof(WebViewRenderer))]
 [assembly: ExportRenderer(typeof(ListView), typeof(ListViewRenderer))]
 [assembly: ExportRenderer(typeof(TableView), typeof(TableViewRenderer))]
 [assembly: ExportRenderer(typeof(NativeViewWrapper), typeof(NativeViewWrapperRenderer))]
 [assembly: ExportRenderer(typeof(Layout), typeof(LayoutRenderer))]
+[assembly: ExportRenderer(typeof(EmbeddedFont), typeof(EmbeddedFontLoader))]
+[assembly: ExportRenderer(typeof(Ellipse), typeof(EllipseRenderer))]
+[assembly: ExportRenderer(typeof(Line), typeof(LineRenderer))]
+[assembly: ExportRenderer(typeof(Polygon), typeof(PolygonRenderer))]
+[assembly: ExportRenderer(typeof(Polyline), typeof(PolylineRenderer))]
+[assembly: ExportRenderer(typeof(Rectangle), typeof(RectangleRenderer))]
 [assembly: ExportCell(typeof(Cell), typeof(CellRenderer))]
 [assembly: ExportCell(typeof(TextCell), typeof(TextCellRenderer))]
 [assembly: ExportCell(typeof(ImageCell), typeof(ImageCellRenderer))]
 [assembly: ExportCell(typeof(EntryCell), typeof(EntryCellRenderer))]
 [assembly: ExportCell(typeof(ViewCell), typeof(ViewCellRenderer))]
 [assembly: ExportCell(typeof(SwitchCell), typeof(SwitchCellRenderer))]
-
-[assembly: AssemblyVersion("2.0.0.0")]
-[assembly: AssemblyFileVersion("2.0.0.0")]
+[assembly: ExportCell(typeof(Path), typeof(PathRenderer))]
+[assembly: Preserve]

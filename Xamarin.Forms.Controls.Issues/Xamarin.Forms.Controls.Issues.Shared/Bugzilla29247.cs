@@ -14,6 +14,7 @@ namespace Xamarin.Forms.Controls.Issues
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 29247, "iOS Device.OpenUri breaks with encoded params", PlatformAffected.iOS, issueTestNumber: 1)]
 #if UITEST
+	[Category(Core.UITests.UITestCategories.Bugzilla)]
 	// this doesn't fail on Uwp but it leaves a browser window open and breaks later tests
 	[Category(UITestCategories.UwpIgnore)]
 #endif
@@ -34,7 +35,9 @@ namespace Xamarin.Forms.Controls.Issues
 					new Button {
 						Text = "Without Params (Works)",
 						AutomationId = "btnOpenUri1",
+#pragma warning disable CS0618 // Type or member is obsolete
 						Command = new Command (() => Device.OpenUri (new Uri ("http://www.bing.com")))
+#pragma warning restore CS0618 // Type or member is obsolete
 					}
 				}
 			};
@@ -44,10 +47,10 @@ namespace Xamarin.Forms.Controls.Issues
 		protected override bool Isolate => true;
 
 		[Test]
-		public void Bugzilla29247Test ()
+		public void Bugzilla29247Test()
 		{
 			RunningApp.WaitForElement(q => q.Marked("btnOpenUri1"));
-			RunningApp.Tap (q => q.Marked ("btnOpenUri1"));
+			RunningApp.Tap(q => q.Marked("btnOpenUri1"));
 		}
 #endif
 	}
@@ -76,7 +79,9 @@ namespace Xamarin.Forms.Controls.Issues
 					new Button {
 						Text = "With encoded Params (Breaks)",
 						AutomationId = "btnOpenUri2",
+#pragma warning disable CS0618 // Type or member is obsolete
 						Command = new Command (() => Device.OpenUri (new Uri ("http://www.bing.com/search?q=xamarin%20bombs%20on%20this")))
+#pragma warning restore CS0618 // Type or member is obsolete
 					}
 				}
 			};
@@ -86,10 +91,10 @@ namespace Xamarin.Forms.Controls.Issues
 		protected override bool Isolate => true;
 
 		[Test]
-		public void Bugzilla29247EncodedParamsTest ()
+		public void Bugzilla29247EncodedParamsTest()
 		{
 			RunningApp.WaitForElement(q => q.Marked("btnOpenUri2"));
-			RunningApp.Tap (q => q.Marked ("btnOpenUri2"));
+			RunningApp.Tap(q => q.Marked("btnOpenUri2"));
 		}
 
 #endif
@@ -119,7 +124,9 @@ namespace Xamarin.Forms.Controls.Issues
 					new Button {
 						Text = "With decoded Params (Breaks)",
 						AutomationId = "btnOpenUri3",
+#pragma warning disable CS0618 // Type or member is obsolete
 						Command = new Command (() => Device.OpenUri (new Uri ("http://www.bing.com/search?q=xamarin bombs on this")))
+#pragma warning restore CS0618 // Type or member is obsolete
 					}
 				}
 			};
@@ -129,10 +136,10 @@ namespace Xamarin.Forms.Controls.Issues
 		protected override bool Isolate => true;
 
 		[Test]
-		public void Bugzilla29247DecodeParamsTest ()
+		public void Bugzilla29247DecodeParamsTest()
 		{
 			RunningApp.WaitForElement(q => q.Marked("btnOpenUri3"));
-			RunningApp.Tap (q => q.Marked ("btnOpenUri3"));
+			RunningApp.Tap(q => q.Marked("btnOpenUri3"));
 		}
 #endif
 	}

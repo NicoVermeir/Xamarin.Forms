@@ -1,17 +1,16 @@
-﻿#if __ANDROID_28__
-using System;
+﻿using System;
 using Android.Content;
-using Android.Graphics;
 using Android.Runtime;
 using Android.Util;
 using Android.Views;
 using Xamarin.Forms.Platform.Android;
+using ARect = Android.Graphics.Rect;
 
 namespace Xamarin.Forms.Material.Android
 {
 	public class MaterialPickerEditText : MaterialFormsEditTextBase
 	{
-		bool _isDisposed = false;
+		bool _disposed = false;
 
 		public MaterialPickerEditText(Context context) : base(context) => PickerManager.Init(this);
 
@@ -27,7 +26,7 @@ namespace Xamarin.Forms.Material.Android
 			return base.OnTouchEvent(e); // raises the OnClick event if focus is already received
 		}
 
-		protected override void OnFocusChanged(bool gainFocus, [GeneratedEnum] FocusSearchDirection direction, Rect previouslyFocusedRect)
+		protected override void OnFocusChanged(bool gainFocus, [GeneratedEnum] FocusSearchDirection direction, ARect previouslyFocusedRect)
 		{
 			base.OnFocusChanged(gainFocus, direction, previouslyFocusedRect);
 			PickerManager.OnFocusChanged(gainFocus, this, (IPopupTrigger)Parent.Parent);
@@ -35,9 +34,9 @@ namespace Xamarin.Forms.Material.Android
 
 		protected override void Dispose(bool disposing)
 		{
-			if (disposing && !_isDisposed)
+			if (disposing && !_disposed)
 			{
-				_isDisposed = true;
+				_disposed = true;
 				PickerManager.Dispose(this);
 			}
 
@@ -45,4 +44,3 @@ namespace Xamarin.Forms.Material.Android
 		}
 	}
 }
-#endif

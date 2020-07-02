@@ -10,12 +10,18 @@ using Android.Content.Res;
 using Android.Graphics;
 using Android.Graphics.Drawables;
 using Android.OS;
+#if __ANDROID_29__
+using AndroidX.Fragment.App;
+using FragmentManager = AndroidX.Fragment.App.FragmentManager;
+using AndroidX.Legacy.App;
+#else
 using Android.Support.V4.App;
+using FragmentManager = Android.Support.V4.App.FragmentManager;
+#endif
 using Android.Util;
 using Android.Views;
 using Android.Widget;
 using Xamarin.Forms.Platform.Android.AppCompat;
-using FragmentManager = Android.Support.V4.App.FragmentManager;
 using Xamarin.Forms.Internals;
 using AView = Android.Views.View;
 
@@ -28,6 +34,8 @@ namespace Xamarin.Forms.Platform.Android
 	{
 
 		internal static string PackageName { get; private set; }
+		internal static string GetPackageName() => PackageName ?? AppCompat.Platform.PackageName;
+
 		internal const string CloseContextActionsSignalName = "Xamarin.CloseContextActions";
 
 		internal static readonly BindableProperty RendererProperty = BindableProperty.CreateAttached("Renderer", typeof(IVisualElementRenderer), typeof(Platform), default(IVisualElementRenderer),
@@ -338,6 +346,7 @@ namespace Xamarin.Forms.Platform.Android
 		{
 			IVisualElementRenderer renderer = Registrar.Registered.GetHandlerForObject<IVisualElementRenderer>(element, context)
 				?? new DefaultRenderer(context);
+
 			renderer.SetElement(element);
 
 			return renderer;
@@ -402,14 +411,15 @@ namespace Xamarin.Forms.Platform.Android
 				return;
 			}
 
-			foreach (ToolbarItem item in _toolbarTracker.ToolbarItems)
+			var toolbarItems = _toolbarTracker.ToolbarItems;
+			foreach (ToolbarItem item in toolbarItems)
 				item.PropertyChanged -= HandleToolbarItemPropertyChanged;
 			menu.Clear();
 
 			if (!ShouldShowActionBarTitleArea())
 				return;
 
-			foreach (ToolbarItem item in _toolbarTracker.ToolbarItems)
+			foreach (ToolbarItem item in toolbarItems)
 			{
 				IMenuItemController controller = item;
 				item.PropertyChanged += HandleToolbarItemPropertyChanged;
@@ -577,7 +587,7 @@ namespace Xamarin.Forms.Platform.Android
 				ClearMasterDetailToggle();
 				return;
 			}
-			if (!CurrentMasterDetailPage.ShouldShowToolbarButton() || CurrentMasterDetailPage.Master.IconImageSource.IsEmpty ||
+			if (!CurrentMasterDetailPage.ShouldShowToolbarButton() || (CurrentMasterDetailPage.Master.IconImageSource?.IsEmpty ?? true) ||
 				(MasterDetailPageController.ShouldShowSplitMode && CurrentMasterDetailPage.IsPresented))
 			{
 				//clear out existing icon;
@@ -630,7 +640,8 @@ namespace Xamarin.Forms.Platform.Android
 			TabbedPage currentTabs = CurrentTabbedPage;
 
 			var atab = actionBar.NewTab();
-			atab.SetText(page.Title);
+			
+			atab.SetText(new Java.Lang.String(page.Title));
 			atab.TabSelected += (sender, e) =>
 			{
 				if (!_ignoreAndroidSelection)
@@ -809,8 +820,8 @@ namespace Xamarin.Forms.Platform.Android
 			if (NavAnimationInProgress)
 				return true;
 
-			Page root = _navModel.Roots.Last();
-			bool handled = root.SendBackButtonPressed();
+			Page root = _navModel.Roots.LastOrDefault();
+			bool handled = root?.SendBackButtonPressed() ?? false;
 
 			return handled;
 		}
@@ -857,7 +868,7 @@ namespace Xamarin.Forms.Platform.Android
 
 				var page = sender as Page;
 				var atab = actionBar.GetTabAt(currentTabs.Children.IndexOf(page));
-				atab.SetText(page.Title);
+				atab.SetText(new Java.Lang.String(page.Title));
 			}
 		}
 
@@ -1082,13 +1093,13 @@ namespace Xamarin.Forms.Platform.Android
 			if (ShouldShowActionBarTitleArea())
 			{
 				actionBar.Title = view.Title;
-				_ = _context.ApplyDrawableAsync(view, NavigationPage.TitleIconProperty, icon =>
+				_ = _context.ApplyDrawableAsync(view, NavigationPage.TitleIconImageSourceProperty, icon =>
 				{
 					if (icon != null)
 						actionBar.SetLogo(icon);
 				});
-				var titleIcon = NavigationPage.GetTitleIcon(view);
-				useLogo = titleIcon != null && titleIcon.IsEmpty;
+				var titleIcon = NavigationPage.GetTitleIconImageSource(view);
+				useLogo = titleIcon != null && !titleIcon.IsEmpty;
 				showHome = true;
 				showTitle = true;
 			}
@@ -1133,7 +1144,7 @@ namespace Xamarin.Forms.Platform.Android
 		internal static int GenerateViewId()
 		{
 			// getting unique Id's is an art, and I consider myself the Jackson Pollock of the field
-			if ((int)Build.VERSION.SdkInt >= 17)
+			if ((int)Forms.SdkInt >= 17)
 				return global::Android.Views.View.GenerateViewId();
 
 			// Numbers higher than this range reserved for xml
@@ -1188,10 +1199,13 @@ namespace Xamarin.Forms.Platform.Android
 
 		#endregion
 
-		internal class DefaultRenderer : VisualElementRenderer<View>
+		internal class DefaultRenderer : VisualElementRenderer<View>, ILayoutChanges
 		{
 			public bool NotReallyHandled { get; private set; }
+			
 			IOnTouchListener _touchListener;
+			bool _disposed;
+			bool _hasLayoutOccurred;
 
 			[Obsolete("This constructor is obsolete as of version 2.5. Please use DefaultRenderer(Context) instead.")]
 			[EditorBrowsable(EditorBrowsableState.Never)]
@@ -1279,10 +1293,25 @@ namespace Xamarin.Forms.Platform.Android
 
 			protected override void Dispose(bool disposing)
 			{
+				if (_disposed)
+				{
+					return;
+				}
+
+				_disposed = true;
+
 				if (disposing)
-					_touchListener = null;
+					SetOnTouchListener(null); 
 
 				base.Dispose(disposing);
+			}
+
+			bool ILayoutChanges.HasLayoutOccurred => _hasLayoutOccurred;
+
+			protected override void OnLayout(bool changed, int left, int top, int right, int bottom)
+			{
+				base.OnLayout(changed, left, top, right, bottom);
+				_hasLayoutOccurred = true;
 			}
 		}
 
@@ -1359,5 +1388,33 @@ namespace Xamarin.Forms.Platform.Android
 		}
 
 		#endregion
+
+		internal static string ResolveMsAppDataUri(Uri uri)
+		{
+			if (uri.Scheme == "ms-appdata")
+			{
+				string filePath = string.Empty;
+
+				if (uri.LocalPath.StartsWith("/local"))
+				{
+					filePath = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments), uri.LocalPath.Substring(7));
+				}
+				else if (uri.LocalPath.StartsWith("/temp"))
+				{
+					filePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), uri.LocalPath.Substring(6));
+				}
+				else
+				{
+					throw new ArgumentException("Invalid Uri", "Source");
+				}
+
+				return filePath;
+			}
+			else
+			{
+				throw new ArgumentException("uri");
+			}
+
+		}
 	}
 }

@@ -15,6 +15,8 @@ namespace Xamarin.Forms.Controls.Issues
 	[Issue(IssueTracker.Bugzilla, 30353, "MasterDetailPage.IsPresentedChanged is not raised")]
 #if UITEST
 	[Category(UITestCategories.UwpIgnore)]
+	[Category(UITestCategories.MasterDetailPage)]
+	[Category(UITestCategories.Bugzilla)]
 #endif
 	public class Bugzilla30353 : TestMasterDetailPage
 	{
@@ -78,44 +80,44 @@ namespace Xamarin.Forms.Controls.Issues
 
 #if UITEST
 		[Test]
-		public void Bugzilla30353Test ()
+		public void MasterDetailPageIsPresentedChangedRaised()
 		{
-			var dontRun = RunningApp.Query (q => q.Marked ("Don't run"));
+			var dontRun = RunningApp.Query(q => q.Marked("Don't run"));
 			if (dontRun.Length > 0)
 			{
-				return;	
+				return;
 			}
-			RunningApp.SetOrientationPortrait ();
-			RunningApp.Screenshot ("Portrait");
-			RunningApp.Tap (q => q.Marked ("Toggle"));
-			RunningApp.Screenshot ("Portrait Visible");
-			RunningApp.WaitForElement (q => q.Marked ("The Master is now visible"));
+			RunningApp.SetOrientationPortrait();
+			RunningApp.Screenshot("Portrait");
+			RunningApp.Tap(q => q.Marked("Toggle"));
+			RunningApp.Screenshot("Portrait Visible");
+			RunningApp.WaitForElement(q => q.Marked("The Master is now visible"));
 			Back();
-			RunningApp.Screenshot ("Portrait Invisible");
-			RunningApp.WaitForElement (q => q.Marked ("The Master is now invisible"));
-			RunningApp.SetOrientationLandscape ();
-			RunningApp.Screenshot ("Landscape Invisible");
-			RunningApp.WaitForElement (q => q.Marked ("The Master is now invisible"));
-			RunningApp.Tap (q => q.Marked ("Toggle"));
-			RunningApp.Screenshot ("Landscape Visible");
-			RunningApp.WaitForElement (q => q.Marked ("The Master is now visible"));
+			RunningApp.Screenshot("Portrait Invisible");
+			RunningApp.WaitForElement(q => q.Marked("The Master is now invisible"));
+			RunningApp.SetOrientationLandscape();
+			RunningApp.Screenshot("Landscape Invisible");
+			RunningApp.WaitForElement(q => q.Marked("The Master is now invisible"));
+			RunningApp.Tap(q => q.Marked("Toggle"));
+			RunningApp.Screenshot("Landscape Visible");
+			RunningApp.WaitForElement(q => q.Marked("The Master is now visible"));
 			Back();
-			RunningApp.Screenshot ("Landscape InVisible");
-			RunningApp.WaitForElement (q => q.Marked ("The Master is now invisible"));
-			RunningApp.SetOrientationPortrait ();
-			RunningApp.Tap (q => q.Marked ("Toggle"));
-			RunningApp.Screenshot ("Portrait Visible");
-			RunningApp.WaitForElement (q => q.Marked ("The Master is now visible"));
+			RunningApp.Screenshot("Landscape InVisible");
+			RunningApp.WaitForElement(q => q.Marked("The Master is now invisible"));
+			RunningApp.SetOrientationPortrait();
+			RunningApp.Tap(q => q.Marked("Toggle"));
+			RunningApp.Screenshot("Portrait Visible");
+			RunningApp.WaitForElement(q => q.Marked("The Master is now visible"));
 			Back();
-			RunningApp.Screenshot ("Portrait Invisible");
-			RunningApp.WaitForElement (q => q.Marked ("The Master is now invisible"));
-			RunningApp.SetOrientationLandscape ();
+			RunningApp.Screenshot("Portrait Invisible");
+			RunningApp.WaitForElement(q => q.Marked("The Master is now invisible"));
+			RunningApp.SetOrientationLandscape();
 		}
 
 		[TearDown]
-		public override void TearDown() 
+		public override void TearDown()
 		{
-			RunningApp.SetOrientationPortrait ();
+			RunningApp.SetOrientationPortrait();
 
 			base.TearDown();
 		}
@@ -123,7 +125,7 @@ namespace Xamarin.Forms.Controls.Issues
 		void Back()
 		{
 #if __IOS__ || __WINDOWS__
-			RunningApp.Tap (q => q.Marked ("Toggle"));
+			RunningApp.Tap(q => q.Marked("Toggle"));
 #else
 			RunningApp.Back();
 #endif

@@ -10,30 +10,37 @@ using NUnit.Framework;
 
 namespace Xamarin.Forms.Controls.Issues
 {
-	[Issue (IssueTracker.Bugzilla, 29017, "Pin clicked does not work on iOS maps")]
+#if UITEST
+	[Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
+	[Issue(IssueTracker.Bugzilla, 29017, "Pin clicked does not work on iOS maps")]
 	public class Issue29017 : TestContentPage // or TestMasterDetailPage, etc ...
 	{
 		Label _lbl;
 
-		protected override void Init ()
+		protected override void Init()
 		{
-			var map = new Map {
+			var map = new Map
+			{
 				HorizontalOptions = LayoutOptions.FillAndExpand,
 				VerticalOptions = LayoutOptions.FillAndExpand
 			};
 
-			_lbl = new Label {
+			_lbl = new Label
+			{
 				Text = "Not Clicked"
 			};
 
-			Content = new StackLayout {
+			Content = new StackLayout
+			{
 				Children = {
 					new Button {
 						Text = "Add pins",
 						Command = new Command (() => {
-
 							foreach (var pin in map.Pins) {
+#pragma warning disable CS0618
 								pin.Clicked -= PinClicked;
+#pragma warning restore CS0618
 							}
 
 							map.Pins.Clear ();
@@ -54,8 +61,9 @@ namespace Xamarin.Forms.Controls.Issues
 									Type = PinType.Place,
 									Position = new Position (map.VisibleRegion.Center.Latitude + lat, map.VisibleRegion.Center.Longitude + lng)
 								};
-
+#pragma warning disable CS0618
 								pin.Clicked += PinClicked;
+#pragma warning restore CS0618
 								map.Pins.Add (pin);
 							}
 						})
@@ -66,9 +74,9 @@ namespace Xamarin.Forms.Controls.Issues
 			};
 		}
 
-		void PinClicked (object sender, EventArgs e)
+		void PinClicked(object sender, EventArgs e)
 		{
-			_lbl.Text = "Click " + DateTime.Now.ToLocalTime ();
+			_lbl.Text = "Click " + DateTime.Now.ToLocalTime();
 		}
 	}
 }

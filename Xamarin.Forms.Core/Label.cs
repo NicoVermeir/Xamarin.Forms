@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
+using System.Text;
 using Xamarin.Forms.Internals;
 using Xamarin.Forms.Platform;
 
@@ -11,7 +12,7 @@ namespace Xamarin.Forms
 {
 	[ContentProperty("Text")]
 	[RenderWith(typeof(_LabelRenderer))]
-	public class Label : View, IFontElement, ITextElement, ITextAlignmentElement, ILineHeightElement, IElementConfiguration<Label>, IDecorableTextElement
+	public class Label : View, IFontElement, ITextElement, ITextAlignmentElement, ILineHeightElement, IElementConfiguration<Label>, IDecorableTextElement, IPaddingElement
 	{
 		public static readonly BindableProperty HorizontalTextAlignmentProperty = TextAlignmentElement.HorizontalTextAlignmentProperty;
 
@@ -28,6 +29,8 @@ namespace Xamarin.Forms
 
 		public static readonly BindableProperty TextColorProperty = TextElement.TextColorProperty;
 
+		public static readonly BindableProperty CharacterSpacingProperty = TextElement.CharacterSpacingProperty;
+
 		public static readonly BindableProperty FontProperty = FontElement.FontProperty;
 
 		public static readonly BindableProperty TextProperty = BindableProperty.Create(nameof(Text), typeof(string), typeof(Label), default(string), propertyChanged: OnTextPropertyChanged);
@@ -37,6 +40,8 @@ namespace Xamarin.Forms
 		public static readonly BindableProperty FontSizeProperty = FontElement.FontSizeProperty;
 
 		public static readonly BindableProperty FontAttributesProperty = FontElement.FontAttributesProperty;
+
+		public static readonly BindableProperty TextTransformProperty = TextElement.TextTransformProperty;
 
 		public static readonly BindableProperty TextDecorationsProperty = DecorableTextElement.TextDecorationsProperty;
 
@@ -73,6 +78,15 @@ namespace Xamarin.Forms
 					label.Text = null;
 			});
 
+		public TextTransform TextTransform
+		{
+			get { return (TextTransform)GetValue(TextTransformProperty); }
+			set { SetValue(TextTransformProperty, value); }
+		}
+
+		public virtual string UpdateFormsText(string source, TextTransform textTransform)
+			=> TextTransformUtilites.GetTransformedText(source, textTransform);
+
 		public static readonly BindableProperty LineBreakModeProperty = BindableProperty.Create(nameof(LineBreakMode), typeof(LineBreakMode), typeof(Label), LineBreakMode.WordWrap,
 			propertyChanged: (bindable, oldvalue, newvalue) => ((Label)bindable).InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged));
 
@@ -85,6 +99,11 @@ namespace Xamarin.Forms
 					((Label)bindable).InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
 				}
 			});
+
+		public static readonly BindableProperty PaddingProperty = PaddingElement.PaddingProperty;
+		
+		public static readonly BindableProperty TextTypeProperty = BindableProperty.Create(nameof(TextType), typeof(TextType), typeof(Label), TextType.Text,
+			propertyChanged: (bindable, oldvalue, newvalue) => ((Label)bindable).InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged));
 
 		readonly Lazy<PlatformConfigurationRegistry<Label>> _platformConfigurationRegistry;
 
@@ -119,7 +138,7 @@ namespace Xamarin.Forms
 			get { return (TextAlignment)GetValue(TextAlignmentElement.HorizontalTextAlignmentProperty); }
 			set { SetValue(TextAlignmentElement.HorizontalTextAlignmentProperty, value); }
 		}
-
+		
 		public LineBreakMode LineBreakMode
 		{
 			get { return (LineBreakMode)GetValue(LineBreakModeProperty); }
@@ -137,7 +156,13 @@ namespace Xamarin.Forms
 			get { return (Color)GetValue(TextElement.TextColorProperty); }
 			set { SetValue(TextElement.TextColorProperty, value); }
 		}
-
+		
+		public double CharacterSpacing
+		{
+			get { return (double)GetValue(TextElement.CharacterSpacingProperty); }
+			set { SetValue(TextElement.CharacterSpacingProperty, value); }
+		}
+		
 		public TextAlignment VerticalTextAlignment
 		{
 			get { return (TextAlignment)GetValue(VerticalTextAlignmentProperty); }
@@ -197,6 +222,18 @@ namespace Xamarin.Forms
 			set => SetValue(MaxLinesProperty, value);
 		}
 
+		public Thickness Padding
+		{
+			get { return (Thickness)GetValue(PaddingProperty); }
+			set { SetValue(PaddingProperty, value); }
+		}
+		
+		public TextType TextType
+		{
+			get => (TextType)GetValue(TextTypeProperty);
+			set => SetValue(TextTypeProperty, value);
+		}
+
 		double IFontElement.FontSizeDefaultValueCreator() =>
 			Device.GetNamedSize(NamedSize.Default, (Label)this);
 
@@ -210,7 +247,7 @@ namespace Xamarin.Forms
 			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
 
 		void IFontElement.OnFontChanged(Font oldValue, Font newValue) =>
-         	InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
+			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
 
 		void ILineHeightElement.OnLineHeightChanged(double oldValue, double newValue) =>
 			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
@@ -219,6 +256,10 @@ namespace Xamarin.Forms
 		{
 			OnPropertyChanging("FormattedText");
 		}
+
+		void ITextElement.OnTextTransformChanged(TextTransform oldValue, TextTransform newValue) =>
+			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
+
 		void OnFormattedTextChanged(object sender, PropertyChangedEventArgs e)
 		{
 			OnPropertyChanged("FormattedText");
@@ -236,7 +277,7 @@ namespace Xamarin.Forms
 
 		void SetupSpanGestureRecognizers(System.Collections.IEnumerable gestureRecognizers)
 		{
-			foreach(GestureRecognizer gestureRecognizer in gestureRecognizers)
+			foreach (GestureRecognizer gestureRecognizer in gestureRecognizers)
 				GestureController.CompositeGestureRecognizers.Add(new ChildGestureRecognizer() { GestureRecognizer = gestureRecognizer });
 		}
 
@@ -336,6 +377,12 @@ namespace Xamarin.Forms
 		{
 		}
 
+		void ITextElement.OnCharacterSpacingPropertyChanged(double oldValue, double newValue)
+		{
+			InvalidateMeasure();
+		}
+
+
 		public override IList<GestureElement> GetChildElements(Point point)
 		{
 			if (FormattedText?.Spans == null || FormattedText?.Spans.Count == 0)
@@ -355,6 +402,16 @@ namespace Xamarin.Forms
 						spans.RemoveAt(i);
 
 			return spans;
+		}
+
+		Thickness IPaddingElement.PaddingDefaultValueCreator()
+		{
+			return default(Thickness);
+		}
+
+		void IPaddingElement.OnPaddingPropertyChanged(Thickness oldValue, Thickness newValue)
+		{
+			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
 		}
 	}
 }

@@ -16,6 +16,7 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 	{
 		AlertDialog _dialog;
 		bool _disposed;
+		EntryAccessibilityDelegate _pickerAccessibilityDelegate;
 
 		public PickerRendererBase(Context context) : base(context)
 		{
@@ -38,6 +39,9 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 				_disposed = true;
 
 				((INotifyCollectionChanged)Element.Items).CollectionChanged -= RowsCollectionChanged;
+
+				_pickerAccessibilityDelegate?.Dispose();
+				_pickerAccessibilityDelegate = null;
 			}
 
 			base.Dispose(disposing);
@@ -54,11 +58,16 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 				if (Control == null)
 				{
 					var textField = CreateNativeControl();
+
 					SetNativeControl(textField);
+
+					ControlUsedForAutomation.SetAccessibilityDelegate(_pickerAccessibilityDelegate = new EntryAccessibilityDelegate(Element));
 				}
 				UpdateFont();
 				UpdatePicker();
 				UpdateTextColor();
+				UpdateCharacterSpacing();
+				UpdateGravity();
 			}
 
 			base.OnElementChanged(e);
@@ -66,16 +75,25 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 
 		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
+			if (this.IsDisposed())
+			{
+				return;
+			}
+
 			base.OnElementPropertyChanged(sender, e);
 
 			if (e.PropertyName == Picker.TitleProperty.PropertyName || e.PropertyName == Picker.TitleColorProperty.PropertyName)
 				UpdatePicker();
 			else if (e.PropertyName == Picker.SelectedIndexProperty.PropertyName)
 				UpdatePicker();
+			else if (e.PropertyName == Picker.CharacterSpacingProperty.PropertyName)
+				UpdateCharacterSpacing();
 			else if (e.PropertyName == Picker.TextColorProperty.PropertyName)
 				UpdateTextColor();
 			else if (e.PropertyName == Picker.FontAttributesProperty.PropertyName || e.PropertyName == Picker.FontFamilyProperty.PropertyName || e.PropertyName == Picker.FontSizeProperty.PropertyName)
 				UpdateFont();
+			else if (e.PropertyName == Picker.HorizontalTextAlignmentProperty.PropertyName || e.PropertyName == Picker.VerticalTextAlignmentProperty.PropertyName)
+				UpdateGravity();
 		}
 
 		protected override void OnFocusChangeRequested(object sender, VisualElement.FocusRequestArgs e)
@@ -83,7 +101,12 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 			base.OnFocusChangeRequested(sender, e);
 
 			if (e.Focus)
-				CallOnClick();
+			{
+				if (Clickable)
+					CallOnClick();
+				else
+					((IPickerRenderer)this)?.OnClick();
+			}
 			else if (_dialog != null)
 			{
 				_dialog.Hide();
@@ -125,7 +148,7 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 				_dialog.DismissEvent += (sender, args) =>
 				{
 					(Element as IElementController)?.SetValueFromRenderer(VisualElement.IsFocusedPropertyKey, false);
-					_dialog.Dispose();
+					_dialog?.Dispose();
 					_dialog = null;
 				};
 
@@ -144,6 +167,14 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 			EditText.SetTextSize(ComplexUnitType.Sp, (float)Element.FontSize);
 		}
 
+		protected void UpdateCharacterSpacing()
+		{
+			if (Forms.IsLollipopOrNewer)
+			{
+				EditText.LetterSpacing = Element.CharacterSpacing.ToEm();
+			}
+		}
+
 		void UpdatePicker()
 		{
 			UpdatePlaceHolderText();
@@ -153,11 +184,14 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 				EditText.Text = null;
 			else
 				EditText.Text = Element.Items[Element.SelectedIndex];
+
+			_pickerAccessibilityDelegate.ValueText = EditText.Text;
 		}
 
 		abstract protected void UpdateTextColor();
 		abstract protected void UpdateTitleColor();
 		abstract protected void UpdatePlaceHolderText();
+		abstract protected void UpdateGravity();
 	}
 
 	public class PickerRenderer : PickerRendererBase<EditText>
@@ -192,6 +226,14 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 			_textColorSwitcher = _textColorSwitcher ?? new TextColorSwitcher(EditText.TextColors, Element.UseLegacyColorManagement());
 			_textColorSwitcher.UpdateTextColor(EditText, Element.TextColor);
 		}
-		protected override void UpdatePlaceHolderText() => EditText.Hint = Element.Title;
+		protected override void UpdatePlaceHolderText()
+		{
+			EditText.Hint = Element.Title;
+		}
+
+		protected override void UpdateGravity()
+		{
+			EditText.Gravity = Element.HorizontalTextAlignment.ToHorizontalGravityFlags() | Element.VerticalTextAlignment.ToVerticalGravityFlags();
+		}
 	}
 }

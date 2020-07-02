@@ -15,7 +15,7 @@ namespace Xamarin.Forms
 			set
 			{
 				_fullLocation = value;
-				Location = Routing.RemoveImplicit(value);
+				Location = Routing.Remove(value, true, true);
 			}
 		}
 
@@ -28,8 +28,12 @@ namespace Xamarin.Forms
 		public ShellNavigationState() { }
 		public ShellNavigationState(string location)
 		{
-			FullLocation = ShellUriHandler.CreateUri(location);
+			var uri = ShellUriHandler.CreateUri(location);
 
+			if (uri.IsAbsoluteUri)
+				uri = new Uri($"/{uri.PathAndQuery}", UriKind.Relative);
+
+			FullLocation = uri;
 		}
 
 		public ShellNavigationState(Uri location) => FullLocation = location;

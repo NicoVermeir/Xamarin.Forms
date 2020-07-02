@@ -39,7 +39,7 @@ namespace Xamarin.Forms.Controls.Issues
 			var buttonD = new Button() { Text = "AEVAL", BackgroundColor = Color.LightBlue, AutomationId = "buttonD" };
 
 			var url = "https://www.microsoft.com/";
-			var html = $"<html><body><a href=\"{url}\">Link</a></body></html>";
+			var html = $"<html><body><a href=\"{url}\">Link</a><br /><a href=\"{url}\" target=\"_blank\">Link with target=_blank</a></body></html>";
 
 			var webView = new WkWebView()
 			{
@@ -77,12 +77,13 @@ namespace Xamarin.Forms.Controls.Issues
 			grid.Children.AddVertical(buttons);
 			grid.Children.AddVertical(new ScrollView() { Content = console });
 
-			buttonA.Clicked += (s, e) => 
+			buttonA.Clicked += (s, e) =>
 			{
 				webView.Source = new UrlWebViewSource() { Url = url };
 			};
 
-			buttonB.Clicked += (s, e) => {
+			buttonB.Clicked += (s, e) =>
+			{
 				webView.Source = new HtmlWebViewSource()
 				{
 					Html = html
@@ -90,7 +91,8 @@ namespace Xamarin.Forms.Controls.Issues
 			};
 
 			var js = "1 + 2";
-			buttonC.Clicked += (s, e) => {
+			buttonC.Clicked += (s, e) =>
+			{
 				log($"Eval: {js}");
 				webView.Eval(js);
 			};
@@ -100,7 +102,8 @@ namespace Xamarin.Forms.Controls.Issues
 				log($"EvalRequested: {e.Script}");
 			};
 
-			buttonD.Clicked += (s, e) => {
+			buttonD.Clicked += (s, e) =>
+			{
 				log($"AEval: {js}");
 				var promise = webView.EvaluateJavaScriptAsync(js);
 				promise.ContinueWith(a => Device.BeginInvokeOnMainThread(() => log($"Evaled: {a.Result}")));
@@ -111,7 +114,8 @@ namespace Xamarin.Forms.Controls.Issues
 			buttonBack.Clicked += (s, e) => { webView.GoBack(); log($"GoBack: {webView.CanGoBack}/{webView.CanGoForward}"); };
 			buttonClear.Clicked += (s, e) => { console.Text = ""; };
 			buttonStop.Clicked += (s, e) => { cancel = true; log("Cancelling navigation"); };
-			buttonState.Clicked += (s, e) => {
+			buttonState.Clicked += (s, e) =>
+			{
 				log($"F/B: {webView.CanGoBack}/{webView.CanGoForward}");
 				log($"Source: {webView.Source.ToString()}");
 			};

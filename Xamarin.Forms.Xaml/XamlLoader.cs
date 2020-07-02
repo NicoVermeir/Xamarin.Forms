@@ -30,10 +30,12 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Xml;
 using Xamarin.Forms.Internals;
+using Xamarin.Forms.Xaml.Diagnostics;
 
 namespace Xamarin.Forms.Xaml.Internals
 {
@@ -70,8 +72,10 @@ namespace Xamarin.Forms.Xaml
 		}
 
 		public static void Load(object view, string xaml) => Load(view, xaml, false);
+		public static void Load(object view, string xaml, bool useDesignProperties) => Load(view, xaml, null, useDesignProperties);
+		public static void Load(object view, string xaml, Assembly rootAssembly) => Load(view, xaml, rootAssembly, false);
 
-		public static void Load(object view, string xaml, bool useDesignProperties)
+		public static void Load(object view, string xaml, Assembly rootAssembly, bool useDesignProperties)
 		{
 			using (var textReader = new StringReader(xaml))
 			using (var reader = XmlReader.Create(textReader)) {
@@ -86,7 +90,7 @@ namespace Xamarin.Forms.Xaml
 						continue;
 					}
 
-					var rootnode = new RuntimeRootNode(new XmlType(reader.NamespaceURI, reader.Name, null), view, (IXmlNamespaceResolver)reader);
+					var rootnode = new RuntimeRootNode(new XmlType(reader.NamespaceURI, reader.Name, null), view, (IXmlNamespaceResolver)reader) { LineNumber = ((IXmlLineInfo)reader).LineNumber, LinePosition = ((IXmlLineInfo)reader).LinePosition };
 					XamlParser.ParseXaml(rootnode, reader);
 #pragma warning disable 0618
 					var doNotThrow = ResourceLoader.ExceptionHandler2 != null || Internals.XamlLoader.DoNotThrowOnExceptions;
@@ -94,9 +98,12 @@ namespace Xamarin.Forms.Xaml
 					void ehandler(Exception e) => ResourceLoader.ExceptionHandler2?.Invoke((e, XamlFilePathAttribute.GetFilePathForObject(view)));
 					Visit(rootnode, new HydrationContext {
 						RootElement = view,
-
+						RootAssembly = rootAssembly ?? view.GetType().GetTypeInfo().Assembly,
 						ExceptionHandler = doNotThrow ? ehandler : (Action<Exception>)null
 					}, useDesignProperties);
+
+					VisualDiagnostics.SendVisualTreeChanged(null, view);
+
 					break;
 				}
 			}
@@ -124,7 +131,8 @@ namespace Xamarin.Forms.Xaml
 					}
 
 					var typeArguments = XamlParser.GetTypeArguments(reader);
-					var rootnode = new RuntimeRootNode(new XmlType(reader.NamespaceURI, reader.Name, typeArguments), null, (IXmlNamespaceResolver)reader);
+					var rootnode = new RuntimeRootNode(new XmlType(reader.NamespaceURI, reader.Name, typeArguments), null, (IXmlNamespaceResolver)reader) { LineNumber = ((IXmlLineInfo)reader).LineNumber, LinePosition = ((IXmlLineInfo)reader).LinePosition };
+
 					XamlParser.ParseXaml(rootnode, reader);
 					var visitorContext = new HydrationContext {
 						ExceptionHandler = doNotThrow ? ehandler : (Action<Exception>)null,
@@ -135,10 +143,68 @@ namespace Xamarin.Forms.Xaml
 					visitorContext.RootElement = inflatedView as BindableObject;
 
 					Visit(rootnode, visitorContext, useDesignProperties);
+					VisualDiagnostics.SendVisualTreeChanged(null, inflatedView);
 					break;
 				}
 			}
 			return inflatedView;
+		}
+
+		public static IResourceDictionary LoadResources(string xaml, IResourcesProvider rootView)
+		{
+			void ehandler(Exception e) => ResourceLoader.ExceptionHandler2?.Invoke((e, XamlFilePathAttribute.GetFilePathForObject(rootView)));
+
+			using (var textReader = new StringReader(xaml))
+			using (var reader = XmlReader.Create(textReader)) {
+				while (reader.Read()) {
+					//Skip until element
+					if (reader.NodeType == XmlNodeType.Whitespace)
+						continue;
+					if (reader.NodeType == XmlNodeType.XmlDeclaration)
+						continue;
+					if (reader.NodeType != XmlNodeType.Element) {
+						Debug.WriteLine("Unhandled node {0} {1} {2}", reader.NodeType, reader.Name, reader.Value);
+						continue;
+					}
+
+					//the root is set to null, and not to rootView, on purpose as we don't want to erase the current Resources of the view
+					RootNode rootNode = new RuntimeRootNode(new XmlType(reader.NamespaceURI, reader.Name, null), null, (IXmlNamespaceResolver)reader) { LineNumber = ((IXmlLineInfo)reader).LineNumber, LinePosition = ((IXmlLineInfo)reader).LinePosition };
+					XamlParser.ParseXaml(rootNode, reader);
+					var rNode = (IElementNode)rootNode;
+					if (!rNode.Properties.TryGetValue(new XmlName(XamlParser.XFUri, "Resources"), out var resources))
+						return null;
+
+					var visitorContext = new HydrationContext
+					{
+						ExceptionHandler = ResourceLoader.ExceptionHandler2 != null ? ehandler : (Action<Exception>)null,
+					};
+					var cvv = new CreateValuesVisitor(visitorContext);
+					if (resources is ElementNode resourcesEN && (resourcesEN.XmlType.NamespaceUri != XamlParser.XFUri || resourcesEN.XmlType.Name != nameof(ResourceDictionary))) { //single implicit resource
+						resources = new ElementNode(new XmlType(XamlParser.XFUri, nameof(ResourceDictionary), null), XamlParser.XFUri, rootNode.NamespaceResolver);
+						((ElementNode)resources).CollectionItems.Add(resourcesEN);
+					}
+					else if (resources is ListNode resourcesLN) { //multiple implicit resources
+						resources = new ElementNode(new XmlType(XamlParser.XFUri, nameof(ResourceDictionary), null), XamlParser.XFUri, rootNode.NamespaceResolver);
+						foreach (var n in resourcesLN.CollectionItems)
+							((ElementNode)resources).CollectionItems.Add(n);
+					}
+					cvv.Visit((ElementNode)resources, null);
+
+					visitorContext.RootElement = rootView;
+
+					resources.Accept(new XamlNodeVisitor((node, parent) => node.Parent = parent), null); //set parents for {StaticResource}
+					resources.Accept(new ExpandMarkupsVisitor(visitorContext), null);
+					resources.Accept(new PruneIgnoredNodesVisitor(false), null);
+					resources.Accept(new NamescopingVisitor(visitorContext), null); //set namescopes for {x:Reference}
+					resources.Accept(new CreateValuesVisitor(visitorContext), null);
+					resources.Accept(new RegisterXNamesVisitor(visitorContext), null);
+					resources.Accept(new FillResourceDictionariesVisitor(visitorContext), null);
+					resources.Accept(new ApplyPropertiesVisitor(visitorContext, true), null);
+
+					return visitorContext.Values[resources] as IResourceDictionary;
+				}
+			}
+			return null;
 		}
 
 		static void Visit(RootNode rootnode, HydrationContext visitorContext, bool useDesignProperties)

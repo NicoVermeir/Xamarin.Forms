@@ -13,6 +13,7 @@ namespace Xamarin.Forms.Controls.Issues
 {
 #if UITEST
 	[NUnit.Framework.Category(Core.UITests.UITestCategories.UwpIgnore)]
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
 #endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 45125, "ListView lacks a way to get information about visible elements (such as FirstVisibleItem) to restore visual positions of elements", PlatformAffected.iOS)]
@@ -236,7 +237,7 @@ namespace Xamarin.Forms.Controls.Issues
 
 #if UITEST
 		[Test]
-		public void Bugzilla45125Test ()
+		public void Bugzilla45125Test()
 		{
 			RunTest();
 
@@ -252,12 +253,12 @@ namespace Xamarin.Forms.Controls.Issues
 
 		void RunTest()
 		{
-			RunningApp.WaitForElement (q => q.Marked (AppearingLabelId));
-			RunningApp.WaitForElement (q => q.Marked (DisappearingLabelId));
+			RunningApp.WaitForElement(q => q.Marked(AppearingLabelId));
+			RunningApp.WaitForElement(q => q.Marked(DisappearingLabelId));
 
-			RunningApp.Screenshot ("There should be appearing and disappearing events for the Groups and Items.");
-			var appearing = int.Parse(RunningApp.Query(q => q.Marked(AppearingLabelId))[0].Text);
-			var disappearing = int.Parse(RunningApp.Query(q=> q.Marked(DisappearingLabelId))[0].Text);
+			RunningApp.Screenshot("There should be appearing and disappearing events for the Groups and Items.");
+			var appearing = int.Parse(RunningApp.WaitForElement(AppearingLabelId)[0].ReadText());
+			var disappearing = int.Parse(RunningApp.WaitForElement(DisappearingLabelId)[0].ReadText());
 
 			Assert.IsTrue(appearing > 0, $"Test {_TestNumber}: No appearing events for groups found.");
 			Assert.IsTrue(disappearing > 0, $"Test {_TestNumber}: No disappearing events for groups found.");

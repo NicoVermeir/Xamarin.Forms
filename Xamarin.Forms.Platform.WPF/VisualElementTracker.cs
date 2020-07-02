@@ -5,8 +5,13 @@ using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media;
 using Xamarin.Forms.Internals;
+using WTransformGroup = System.Windows.Media.TransformGroup;
+using WTransformCollection = System.Windows.Media.TransformCollection;
+using WRotateTransform = System.Windows.Media.RotateTransform;
+using WTranslateTransform = System.Windows.Media.TranslateTransform;
+using WScaleTransform = System.Windows.Media.ScaleTransform;
+using Xamarin.Forms.Platform.WPF.Extensions;
 
 namespace Xamarin.Forms.Platform.WPF
 {
@@ -30,7 +35,9 @@ namespace Xamarin.Forms.Platform.WPF
 
 		bool _invalidateArrangeNeeded;
 		bool _isPanning;
+#pragma warning disable 0414 // The private field 'field' is assigned but its value is never used
 		bool _isPinching;
+#pragma warning restore 0414
 
 		bool _touchFrameReportedEventSet;
 		int _touchPoints = 1;
@@ -131,6 +138,8 @@ namespace Xamarin.Forms.Platform.WPF
 				UpdateOpacity();
 			else if (e.PropertyName == VisualElement.InputTransparentProperty.PropertyName)
 				UpdateInputTransparent();
+			else if (e.PropertyName == VisualElement.ClipProperty.PropertyName)
+				UpdateClip();
 		}
 
 		protected virtual void UpdateNativeControl()
@@ -141,6 +150,7 @@ namespace Xamarin.Forms.Platform.WPF
 			UpdateOpacity();
 			UpdateScaleAndTranslateAndRotation();
 			UpdateInputTransparent();
+			UpdateClip();
 			UpdateVisibility();
 
 			if (_invalidateArrangeNeeded)
@@ -248,6 +258,11 @@ namespace Xamarin.Forms.Platform.WPF
 			Control.IsHitTestVisible = !Element.InputTransparent;
 		}
 
+		void UpdateClip()
+		{
+			Control.Clip = Element.Clip.ToWindows();
+		}
+
 		void UpdateOpacity()
 		{
 			Control.Opacity = Element.Opacity;
@@ -269,22 +284,22 @@ namespace Xamarin.Forms.Platform.WPF
 			double offsetY = scale == 0 ? 0 : translationY / scale;
 
 			Control.RenderTransformOrigin = new System.Windows.Point(anchorX, anchorY);
-			Control.RenderTransform = new TransformGroup()
+			Control.RenderTransform = new WTransformGroup()
 			{
-				Children = new TransformCollection()
+				Children = new WTransformCollection()
 				{
-					new RotateTransform()
+					new WRotateTransform()
 					{
 						CenterX = anchorX,
 						CenterY = anchorY,
 						Angle = Element.Rotation
 					},
-					new TranslateTransform()
+					new WTranslateTransform()
 					{
 						X = offsetX,
 						Y = offsetY
 					},
-					new ScaleTransform
+					new WScaleTransform
 					{
 						ScaleX = scale,
 						ScaleY = scale

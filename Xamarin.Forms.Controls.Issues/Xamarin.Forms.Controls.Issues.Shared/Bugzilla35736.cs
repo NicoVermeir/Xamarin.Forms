@@ -45,8 +45,8 @@ namespace Xamarin.Forms.Controls.Issues
 #if UITEST && __IOS__
 		[Test]
 		[Category(UITestCategories.ManualReview)]
-		[Ignore]
-		public void Bugzilla35736Test() 
+		[Ignore("Fails sometimes")]
+		public void Bugzilla35736Test()
 		{
 			RunningApp.WaitForElement(q => q.Marked("Bugzilla35736Editor"));
 			RunningApp.EnterText(q => q.Marked("Bugzilla35736Editor"), "Testig");

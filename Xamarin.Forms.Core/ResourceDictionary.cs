@@ -201,7 +201,7 @@ namespace Xamarin.Forms
 					return _innerDictionary[index];
 				if (_mergedInstance != null && _mergedInstance.ContainsKey(index))
 					return _mergedInstance[index];
-				if (MergedDictionaries != null)
+				if (_mergedDictionaries != null)
 					foreach (var dict in MergedDictionaries.Reverse())
 						if (dict.ContainsKey(index))
 							return dict[index];
@@ -241,7 +241,7 @@ namespace Xamarin.Forms
 
 		internal IEnumerable<KeyValuePair<string, object>> MergedResources {
 			get {
-				if (MergedDictionaries != null)
+				if (_mergedDictionaries != null)
 				{
 					for (int i = _mergedDictionaries.Count - 1; i >= 0; i--)
 					{
@@ -260,19 +260,25 @@ namespace Xamarin.Forms
 		}
 
 		public bool TryGetValue(string key, out object value)
+			=> TryGetValueAndSource(key, out value, out _);
+
+		internal bool TryGetValueAndSource(string key, out object value, out ResourceDictionary source)
 		{
+			source = this;
 			return _innerDictionary.TryGetValue(key, out value)
-				|| (_mergedInstance != null && _mergedInstance.TryGetValue(key, out value))
-				|| (MergedDictionaries != null && TryGetMergedDictionaryValue(key, out value));
+				|| (_mergedInstance != null && _mergedInstance.TryGetValueAndSource(key, out value, out source))
+				|| (_mergedDictionaries != null && TryGetMergedDictionaryValue(key, out value, out source));
 		}
 
-		bool TryGetMergedDictionaryValue(string key, out object value)
+		bool TryGetMergedDictionaryValue(string key, out object value, out ResourceDictionary source)
 		{
 			foreach (var dictionary in MergedDictionaries.Reverse())
-				if (dictionary.TryGetValue(key, out value))
+				if (dictionary.TryGetValue(key, out value)) {
+					source = dictionary;
 					return true;
+				}
 
-			value = null;
+			value = null; source = null;
 			return false;
 		}
 
@@ -321,7 +327,16 @@ namespace Xamarin.Forms
 			ValuesChanged?.Invoke(this, new ResourcesChangedEventArgs(values));
 		}
 
+		internal void Reload()
+		{
+			foreach (var mr in MergedResources)
+				OnValuesChanged(mr);
+		}
+
 		event EventHandler<ResourcesChangedEventArgs> ValuesChanged;
+
+		//only used for unit testing
+		internal static void ClearCache() => s_instances = new ConditionalWeakTable<Type, ResourceDictionary>();
 
 		[Xaml.ProvideCompiled("Xamarin.Forms.Core.XamlC.RDSourceTypeConverter")]
 		public class RDSourceTypeConverter : TypeConverter, IExtendedTypeConverter

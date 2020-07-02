@@ -3,8 +3,10 @@ using System.ComponentModel;
 using System.Linq;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Text;
 using Windows.UI.Xaml.Media;
 using Xamarin.Forms.Internals;
+using Windows.UI.Xaml.Controls.Primitives;
 
 namespace Xamarin.Forms.Platform.UWP
 {
@@ -46,8 +48,21 @@ namespace Xamarin.Forms.Platform.UWP
 				}
 
 				UpdateTime();
+				UpdateCharacterSpacing();
 				UpdateFlowDirection();
 			}
+		}
+
+		internal override void OnElementFocusChangeRequested(object sender, VisualElement.FocusRequestArgs args)
+		{
+			base.OnElementFocusChangeRequested(sender, args);
+
+			// Show a picker fly out on focus to match iOS and Android behavior
+			var flyout = new TimePickerFlyout { Placement = FlyoutPlacementMode.Bottom, Time = Control.Time };
+			flyout.TimePicked += (p, e) => Control.Time = p.Time;
+			if (!Element.IsVisible)
+				flyout.Placement = FlyoutPlacementMode.Full;
+			flyout.ShowAt(Control);
 		}
 
 		void ControlOnLoaded(object sender, RoutedEventArgs routedEventArgs)
@@ -73,7 +88,9 @@ namespace Xamarin.Forms.Platform.UWP
 
 			// We also have to intercept the VSM changes on the TimePicker's button
 			var button = Control.GetDescendantsByName<Windows.UI.Xaml.Controls.Button>("FlyoutButton").FirstOrDefault();
-			InterceptVisualStateManager.Hook(button.GetFirstDescendant<Windows.UI.Xaml.Controls.Grid>(), button, Element);
+
+			if (button != null)
+				InterceptVisualStateManager.Hook(button.GetFirstDescendant<Windows.UI.Xaml.Controls.Grid>(), button, Element);
 		}
 
 		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -86,6 +103,8 @@ namespace Xamarin.Forms.Platform.UWP
 				UpdateTextColor();
 			else if (e.PropertyName == TimePicker.FontAttributesProperty.PropertyName || e.PropertyName == TimePicker.FontFamilyProperty.PropertyName || e.PropertyName == TimePicker.FontSizeProperty.PropertyName)
 				UpdateFont();
+			else if (e.PropertyName == TimePicker.CharacterSpacingProperty.PropertyName)
+				UpdateCharacterSpacing();
 
 			if (e.PropertyName == VisualElement.FlowDirectionProperty.PropertyName)
 				UpdateFlowDirection();
@@ -145,6 +164,11 @@ namespace Xamarin.Forms.Platform.UWP
 		void UpdateTime()
 		{
 			Control.Time = Element.Time;
+		}
+
+		void UpdateCharacterSpacing()
+		{
+			Control.CharacterSpacing = Element.CharacterSpacing.ToEm();
 		}
 
 		void UpdateTextColor()

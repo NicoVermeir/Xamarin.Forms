@@ -13,6 +13,8 @@ using Xamarin.Forms.Xaml;
 using static Mono.Cecil.Cil.Instruction;
 using static Mono.Cecil.Cil.OpCodes;
 
+using static Xamarin.Forms.Build.Tasks.BuildExceptionCode;
+
 namespace Xamarin.Forms.Build.Tasks
 {
 	class SetPropertiesVisitor : IXamlNodeVisitor
@@ -137,13 +139,15 @@ namespace Xamarin.Forms.Build.Tasks
 				var parentVar = Context.Variables[(IElementNode)parentNode];
 				string contentProperty;
 
-				if (CanAddToResourceDictionary(parentVar, parentVar.VariableType, node, node, Context)) {
+				if (CanAddToResourceDictionary(parentVar, parentVar.VariableType, node, node, Context))
+				{
 					Context.IL.Append(parentVar.LoadAs(Module.GetTypeDefinition(("Xamarin.Forms.Core", "Xamarin.Forms", "ResourceDictionary")), Module));
 					Context.IL.Append(AddToResourceDictionary(node, node, Context));
 				}
 				// Collection element, implicit content, or implicit collection element.
-				else if (   parentVar.VariableType.ImplementsInterface(Module.ImportReference(("mscorlib", "System.Collections", "IEnumerable")))
-						 && parentVar.VariableType.GetMethods(md => md.Name == "Add" && md.Parameters.Count == 1, Module).Any()) {
+				else if (parentVar.VariableType.ImplementsInterface(Module.ImportReference(("mscorlib", "System.Collections", "IEnumerable")))
+						 && parentVar.VariableType.GetMethods(md => md.Name == "Add" && md.Parameters.Count == 1, Module).Any())
+				{
 					var elementType = parentVar.VariableType;
 					var adderTuple = elementType.GetMethods(md => md.Name == "Add" && md.Parameters.Count == 1, Module).First();
 					var adderRef = Module.ImportReference(adderTuple.Item1);
@@ -155,16 +159,17 @@ namespace Xamarin.Forms.Build.Tasks
 					if (adderRef.ReturnType.FullName != "System.Void")
 						Context.IL.Emit(Pop);
 				}
-				else if ((contentProperty = GetContentProperty(parentVar.VariableType)) != null) {
+				else if ((contentProperty = GetContentProperty(parentVar.VariableType)) != null)
+				{
 					var name = new XmlName(node.NamespaceURI, contentProperty);
 					if (skips.Contains(name))
 						return;
-					if (parentNode is IElementNode && ((IElementNode)parentNode).SkipProperties.Contains (propertyName))
+					if (parentNode is IElementNode && ((IElementNode)parentNode).SkipProperties.Contains(propertyName))
 						return;
 					Context.IL.Append(SetPropertyValue(Context.Variables[(IElementNode)parentNode], name, node, Context, node));
 				}
 				else
-					throw new XamlParseException($"Can not set the content of {((IElementNode)parentNode).XmlType.Name} as it doesn't have a ContentPropertyAttribute", node);
+					throw new BuildException(BuildExceptionCode.ContentPropertyAttributeMissing, node, null, ((IElementNode)parentNode).XmlType.Name);
 			}
 			else if (IsCollectionItem(node, parentNode) && parentNode is ListNode)
 			{
@@ -190,9 +195,9 @@ namespace Xamarin.Forms.Build.Tasks
 					Context.IL.Append(AddToResourceDictionary(node, node, Context));
 					return;
 				} 
-				var adderTuple = propertyType.GetMethods(md => md.Name == "Add" && md.Parameters.Count == 1, Module).FirstOrDefault();
-				if (adderTuple == null)
-					throw new XamlParseException($"Can not Add() elements to {parent.VariableType}.{localname}", node);
+				var adderTuple = propertyType.GetMethods(md => md.Name == "Add" && md.Parameters.Count == 1, Module).FirstOrDefault() ??
+					throw new BuildException(BuildExceptionCode.AdderMissing, node, null, parent.VariableType, localname);
+					
 				var adderRef = Module.ImportReference(adderTuple.Item1);
 				adderRef = Module.ImportReference(adderRef.ResolveGenericParameters(adderTuple.Item2, Module));
 
@@ -283,8 +288,9 @@ namespace Xamarin.Forms.Build.Tasks
 			{
 				var acceptEmptyServiceProvider = vardefref.VariableDefinition.VariableType.GetCustomAttribute(module, ("Xamarin.Forms.Core", "Xamarin.Forms.Xaml", "AcceptEmptyServiceProviderAttribute")) != null;
 				if (   vardefref.VariableDefinition.VariableType.FullName == "Xamarin.Forms.Xaml.BindingExtension"
-				    && (   node.Properties == null
-				        || !node.Properties.ContainsKey(new XmlName("", "Source"))))
+				    && (node.Properties == null || !node.Properties.ContainsKey(new XmlName("", "Source"))) //do not compile bindings if Source is set
+				    && bpRef != null //do not compile bindings if we're not gonna SetBinding
+					)
 					foreach (var instruction in CompileBindingPath(node, context, vardefref.VariableDefinition))
 						yield return instruction;
 
@@ -382,13 +388,30 @@ namespace Xamarin.Forms.Build.Tasks
 			if (dataTypeNode is null)
 				yield break;
 
-			if (!((dataTypeNode as ValueNode)?.Value is string dataType))
-				throw new XamlParseException("x:DataType expects a string literal", dataTypeNode as IXmlLineInfo);
+			if (   dataTypeNode is ElementNode enode
+				&& enode.XmlType.NamespaceUri == XamlParser.X2009Uri
+				&& enode.XmlType.Name == nameof(Xamarin.Forms.Xaml.NullExtension))
+				yield break;
+
+			string dataType = null;
+
+			if (   dataTypeNode is ElementNode elementNode
+				&& elementNode.XmlType.NamespaceUri == XamlParser.X2009Uri
+				&& elementNode.XmlType.Name == nameof(Xamarin.Forms.Xaml.TypeExtension)
+				&& elementNode.Properties.ContainsKey(new XmlName("", nameof(Xamarin.Forms.Xaml.TypeExtension.TypeName)))
+				&& (elementNode.Properties[new XmlName("", nameof(Xamarin.Forms.Xaml.TypeExtension.TypeName))] as ValueNode)?.Value is string stringtype)
+				dataType = stringtype;
+
+			if ((dataTypeNode as ValueNode)?.Value is string sType)
+				dataType = sType;
+
+			if (dataType is null)
+				throw new BuildException(XDataTypeSyntax, dataTypeNode as IXmlLineInfo, null);
 
 			var prefix = dataType.Contains(":") ? dataType.Substring(0, dataType.IndexOf(":", StringComparison.Ordinal)) : "";
 			var namespaceuri = node.NamespaceResolver.LookupNamespace(prefix) ?? "";
 			if (!string.IsNullOrEmpty(prefix) && string.IsNullOrEmpty(namespaceuri))
-				throw new XamlParseException($"Undeclared xmlns prefix '{prefix}'", dataTypeNode as IXmlLineInfo);
+				throw new BuildException(XmlnsUndeclared, dataTypeNode as IXmlLineInfo, null, prefix);
 
 			var dtXType = new XmlType(namespaceuri, dataType, null);
 
@@ -454,38 +477,96 @@ namespace Xamarin.Forms.Build.Tasks
 				if (lbIndex != -1) {
 					var rbIndex = p.LastIndexOf(']');
 					if (rbIndex == -1)
-						throw new XamlParseException("Binding: Indexer did not contain closing bracket", lineInfo);
+						throw new BuildException(BuildExceptionCode.BindingIndexerNotClosed, lineInfo, null);
 					
 					var argLength = rbIndex - lbIndex - 1;
 					if (argLength == 0)
-						throw new XamlParseException("Binding: Indexer did not contain arguments", lineInfo);
+						throw new BuildException(BuildExceptionCode.BindingIndexerEmpty, lineInfo, null);
 
 					indexArg = p.Substring(lbIndex + 1, argLength).Trim();
 					if (indexArg.Length == 0)
-						throw new XamlParseException("Binding: Indexer did not contain arguments", lineInfo);
-					
+						throw new BuildException(BuildExceptionCode.BindingIndexerEmpty, lineInfo, null);
+
 					p = p.Substring(0, lbIndex);
 					p = p.Trim();
 				}
 
 				if (p.Length > 0) {
 					var property = previousPartTypeRef.GetProperty(pd => pd.Name == p && pd.GetMethod != null && pd.GetMethod.IsPublic, out var propDeclTypeRef)
-					                                  ?? throw new XamlParseException($"Binding: Property '{p}' not found on '{previousPartTypeRef}'", lineInfo);
+						?? throw new BuildException(BuildExceptionCode.BindingPropertyNotFound, lineInfo, null, p, previousPartTypeRef);
 					properties.Add((property, propDeclTypeRef, null));
-					previousPartTypeRef = property.PropertyType;
+					previousPartTypeRef = property.PropertyType.ResolveGenericParameters(propDeclTypeRef);
 				}
 				if (indexArg != null) {
 					var defaultMemberAttribute = previousPartTypeRef.GetCustomAttribute(module, ("mscorlib", "System.Reflection", "DefaultMemberAttribute"));
 					var indexerName = defaultMemberAttribute?.ConstructorArguments?.FirstOrDefault().Value as string ?? "Item";
-					var indexer = previousPartTypeRef.GetProperty(pd => pd.Name == indexerName && pd.GetMethod != null && pd.GetMethod.IsPublic, out var indexerDeclTypeRef);
+					PropertyDefinition indexer = null;
+					TypeReference indexerDeclTypeRef = null;
+					if (int.TryParse(indexArg, out _))
+						indexer = previousPartTypeRef.GetProperty(pd => pd.Name == indexerName
+																	 && pd.GetMethod != null
+																	 && TypeRefComparer.Default.Equals(pd.GetMethod.Parameters[0].ParameterType.ResolveGenericParameters(previousPartTypeRef), module.ImportReference(("mscorlib", "System", "Int32")))
+																	 && pd.GetMethod.IsPublic, out indexerDeclTypeRef);
+					indexer = indexer ?? previousPartTypeRef.GetProperty(pd => pd.Name == indexerName
+																			&& pd.GetMethod != null
+																			&& TypeRefComparer.Default.Equals(pd.GetMethod.Parameters[0].ParameterType.ResolveGenericParameters(previousPartTypeRef), module.ImportReference(("mscorlib", "System", "String")))
+																			&& pd.GetMethod.IsPublic, out indexerDeclTypeRef);
+					indexer = indexer ?? previousPartTypeRef.GetProperty(pd => pd.Name == indexerName
+																			&& pd.GetMethod != null
+																			&& TypeRefComparer.Default.Equals(pd.GetMethod.Parameters[0].ParameterType.ResolveGenericParameters(previousPartTypeRef), module.ImportReference(("mscorlib", "System", "Object")))
+																			&& pd.GetMethod.IsPublic, out indexerDeclTypeRef);
+
 					properties.Add((indexer, indexerDeclTypeRef, indexArg));
 					var indexType = indexer.GetMethod.Parameters[0].ParameterType.ResolveGenericParameters(indexerDeclTypeRef);
 					if (!TypeRefComparer.Default.Equals(indexType, module.TypeSystem.String) && !TypeRefComparer.Default.Equals(indexType, module.TypeSystem.Int32))
-						throw new XamlParseException($"Binding: Unsupported indexer index type: {indexType.FullName}", lineInfo);
+						throw new BuildException(BuildExceptionCode.BindingIndexerTypeUnsupported, lineInfo, null, indexType.FullName);
 					previousPartTypeRef = indexer.PropertyType.ResolveGenericParameters(indexerDeclTypeRef);
 				}
 			}
 			return properties;
+		}
+
+		static IEnumerable<Instruction> DigProperties(IEnumerable<(PropertyDefinition property, TypeReference propDeclTypeRef, string indexArg)> properties, Dictionary<TypeReference, VariableDefinition> locs, Func<Instruction> fallback, IXmlLineInfo lineInfo, ModuleDefinition module)
+		{
+			var first = true;
+
+			foreach (var (property, propDeclTypeRef, indexArg) in properties) {
+				if (!first && propDeclTypeRef.IsValueType) {
+					var importedPropDeclTypeRef = module.ImportReference(propDeclTypeRef);
+
+					if (!locs.TryGetValue(importedPropDeclTypeRef, out var loc)) {
+						loc = new VariableDefinition(importedPropDeclTypeRef);
+						locs[importedPropDeclTypeRef] = loc;
+					}
+
+					yield return Create(Stloc, loc);
+					yield return Create(Ldloca, loc);
+				}
+
+				if (fallback != null && !propDeclTypeRef.IsValueType) {
+					yield return Create(Dup);
+					yield return Create(Brfalse, fallback());
+				}
+
+				if (indexArg != null) {
+					var indexType = property.GetMethod.Parameters[0].ParameterType.ResolveGenericParameters(propDeclTypeRef);
+					if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.String))
+						yield return Create(Ldstr, indexArg);
+					else if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.Int32) && int.TryParse(indexArg, out int index))
+						yield return Create(Ldc_I4, index);
+					else
+						throw new BuildException(BindingIndexerParse, lineInfo, null, indexArg, property.Name);
+				}
+
+				var getMethod = module.ImportReference((module.ImportReference(property.GetMethod)).ResolveGenericParameters(propDeclTypeRef, module));
+
+				if (property.GetMethod.IsVirtual)
+					yield return Create(Callvirt, getMethod);
+				else
+					yield return Create(Call, getMethod);
+
+				first = false;
+			}
 		}
 
 		static IEnumerable<Instruction> CompiledBindingGetGetter(TypeReference tSourceRef, TypeReference tPropertyRef, IList<(PropertyDefinition property, TypeReference propDeclTypeRef, string indexArg)> properties, ElementNode node, ILContext context)
@@ -538,70 +619,33 @@ namespace Xamarin.Forms.Build.Tasks
 				else
 					il.Emit(Ldarg_0);
 
-				for (int i = 0; i < properties.Count; i++) {
-					(PropertyDefinition property, TypeReference propDeclTypeRef, string indexArg) = properties[i];
-					if (i > 0 && propDeclTypeRef.IsValueType) {
-						var importedPropDeclTypeRef = module.ImportReference(propDeclTypeRef);
+				Instruction pop = null;
+				il.Append(DigProperties(properties, locs, () => {
+					if (pop == null)
+						pop = Create(Pop);
 
-						if (!locs.TryGetValue(importedPropDeclTypeRef, out var loc)) {
-							loc = new VariableDefinition(importedPropDeclTypeRef);
-							getter.Body.Variables.Add(loc);
-							locs[importedPropDeclTypeRef] = loc;
-						}
+					return pop;
+				}, node as IXmlLineInfo, module));
 
-						il.Emit(Stloc, loc);
-						il.Emit(Ldloca, loc);
-					}
+				foreach (var loc in locs.Values)
+					getter.Body.Variables.Add(loc);
 
-					if (!propDeclTypeRef.IsValueType) { //if part of the path is null, return (default(T), false)
-						var nop = Create(Nop);
-						il.Emit(Dup);
-						il.Emit(Ldnull);
-						il.Emit(Ceq);
-						il.Emit(Brfalse, nop);
-						il.Emit(Pop);
-						if (tPropertyRef.IsValueType) {
-							var importedTPropertyRef = module.ImportReference(tPropertyRef);
-
-							if (!locs.TryGetValue(importedTPropertyRef, out var defaultValueVarDef)) {
-								defaultValueVarDef = new VariableDefinition(tPropertyRef);
-								getter.Body.Variables.Add(defaultValueVarDef);
-								locs[importedTPropertyRef] = defaultValueVarDef;
-							}
-
-							il.Emit(Ldloca_S, defaultValueVarDef);
-							il.Emit(Initobj, tPropertyRef);
-							il.Emit(Ldloc, defaultValueVarDef);
-						}
-						else
-							il.Emit(Ldnull);
-						il.Emit(Ldc_I4_0); //false
-
-						il.Emit(Newobj, tupleCtorRef);
-						il.Emit(Ret);
-						il.Append(nop);
-					}
-
-					if (indexArg != null) {
-						var indexType = property.GetMethod.Parameters[0].ParameterType.ResolveGenericParameters(propDeclTypeRef);
-						if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.String))
-							il.Emit(Ldstr, indexArg);
-						else if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.Int32) && int.TryParse(indexArg, out int index))
-							il.Emit(Ldc_I4, index);
-						else
-							throw new XamlParseException($"Binding: {indexArg} could not be parsed as an index for a {property.Name}", node as IXmlLineInfo);
-					}
-
-					var getMethod = module.ImportReference((module.ImportReference(property.GetMethod)).ResolveGenericParameters(propDeclTypeRef, module));
-
-					if (property.GetMethod.IsVirtual)
-						il.Emit(Callvirt, getMethod);
-					else
-						il.Emit(Call, getMethod);
-				}
 				il.Emit(Ldc_I4_1); //true
 				il.Emit(Newobj, tupleCtorRef);
 				il.Emit(Ret);
+
+				if (pop != null) {
+					if (!locs.TryGetValue(tupleRef, out var defaultValueVarDef)) {
+						defaultValueVarDef = new VariableDefinition(tupleRef);
+						getter.Body.Variables.Add(defaultValueVarDef);
+					}
+
+					il.Append(pop);
+					il.Emit(Ldloca_S, defaultValueVarDef);
+					il.Emit(Initobj, tupleRef);
+					il.Emit(Ldloc, defaultValueVarDef);
+					il.Emit(Ret);
+				}
 			}
 			context.Body.Method.DeclaringType.Methods.Add(getter);
 
@@ -658,36 +702,44 @@ namespace Xamarin.Forms.Build.Tasks
 				il.Emit(Ldarga_S, (byte)0);
 			else
 				il.Emit(Ldarg_0);
-			for (int i = 0; i < properties.Count - 1; i++) {
-				(PropertyDefinition property, TypeReference propDeclTypeRef, string indexArg) = properties[i];
-				if (indexArg != null) {
-					var indexType = property.GetMethod.Parameters[0].ParameterType.ResolveGenericParameters(propDeclTypeRef);
-					if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.String))
-						il.Emit(Ldstr, indexArg);
-					else if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.Int32)) {
-						if (!int.TryParse(indexArg, out var index))
-							throw new XamlParseException($"Binding: {indexArg} could not be parsed as an index for a {property.Name}", node as IXmlLineInfo);
-						il.Emit(Ldc_I4, index);
-					}
-				}
+			var locs = new Dictionary<TypeReference, VariableDefinition>();
+			Instruction pop = null;
+			il.Append(DigProperties(properties.Take(properties.Count - 1), locs, () => {
+				if (pop == null)
+					pop = Instruction.Create(Pop);
 
-				var getMethod = module.ImportReference(property.GetMethod);
-				getMethod = module.ImportReference(getMethod.ResolveGenericParameters(propDeclTypeRef, module));
+				return pop;
+			}, node as IXmlLineInfo, module));
 
-				if (property.GetMethod.IsVirtual)
-					il.Emit(Callvirt, getMethod);
-				else
-					il.Emit(Call, getMethod);
-			}
+			foreach (var loc in locs.Values)
+				setter.Body.Variables.Add(loc);
 
 			(PropertyDefinition lastProperty, TypeReference lastPropDeclTypeRef, string lastIndexArg) = properties.Last();
+			if (lastPropDeclTypeRef.IsValueType) {
+				var importedPropDeclTypeRef = module.ImportReference(lastPropDeclTypeRef);
+
+				if (!locs.TryGetValue(importedPropDeclTypeRef, out var loc)) {
+					loc = new VariableDefinition(importedPropDeclTypeRef);
+					setter.Body.Variables.Add(loc);
+				}
+
+				il.Emit(Stloc, loc);
+				il.Emit(Ldloca, loc);
+			} else {
+				if (pop == null)
+					pop = Instruction.Create(Pop);
+
+				il.Emit(Dup);
+				il.Emit(Brfalse, pop);
+			}
+
 			if (lastIndexArg != null) {
 				var indexType = lastProperty.GetMethod.Parameters[0].ParameterType.ResolveGenericParameters(lastPropDeclTypeRef);
 				if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.String))
 					il.Emit(Ldstr, lastIndexArg);
 				else if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.Int32)) {
 					if (!int.TryParse(lastIndexArg, out int index))
-						throw new XamlParseException($"Binding: {lastIndexArg} could not be parsed as an index for a {lastProperty.Name}", node as IXmlLineInfo);
+						throw new BuildException(BindingIndexerParse, node as IXmlLineInfo, null, lastIndexArg, lastProperty.Name);
 					il.Emit(Ldc_I4, index);
 				}
 			}
@@ -700,6 +752,11 @@ namespace Xamarin.Forms.Build.Tasks
 				il.Emit(Call, setterRef);
 
 			il.Emit(Ret);
+
+			if (pop != null) {
+				il.Append(pop);
+				il.Emit(Ret);
+			}
 
 			context.Body.Method.DeclaringType.Methods.Add(setter);
 
@@ -765,30 +822,11 @@ namespace Xamarin.Forms.Build.Tasks
 					il.Emit(Ldarga_S, (byte)0);
 				else
 					il.Emit(Ldarg_0);
-				var lastGetterTypeRef = tSourceRef;
-				for (int j = 0; j < i; j++) {
-					(PropertyDefinition property, TypeReference propDeclTypeRef, string indexArg) = properties[j];
-					if (indexArg != null) {
-						var indexType = property.GetMethod.Parameters[0].ParameterType.ResolveGenericParameters(propDeclTypeRef);
-						if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.String))
-							il.Emit(Ldstr, indexArg);
-						else if (TypeRefComparer.Default.Equals(indexType, module.TypeSystem.Int32)) {
-							if (!int.TryParse(indexArg, out var index))
-								throw new XamlParseException($"Binding: {indexArg} could not be parsed as an index for a {property.Name}", node as IXmlLineInfo);
-							il.Emit(Ldc_I4, index);
-						}
-					}
-
-					var getMethod = module.ImportReference(property.GetMethod);
-					getMethod = module.ImportReference(getMethod.ResolveGenericParameters(propDeclTypeRef, module));
-
-					if (property.GetMethod.IsVirtual)
-						il.Emit(Callvirt, getMethod);
-					else
-						il.Emit(Call, getMethod);
-
-					lastGetterTypeRef = property.PropertyType;
-				}
+				var lastGetterTypeRef = properties[i - 1].property.PropertyType;
+				var locs = new Dictionary<TypeReference, VariableDefinition>();
+				il.Append(DigProperties(properties.Take(i), locs, null, node as IXmlLineInfo, module));
+				foreach (var loc in locs.Values)
+					partGetter.Body.Variables.Add(loc);
 				if (lastGetterTypeRef.IsValueType)
 					il.Emit(Box, module.ImportReference(lastGetterTypeRef));
 
@@ -825,18 +863,18 @@ namespace Xamarin.Forms.Build.Tasks
 //			IL_008e:  newobj instance void class [mscorlib]System.Tuple`2<class [mscorlib]System.Func`2<class ViewModel, object>, string>::'.ctor'(!0, !1)
 //			IL_0093:  stelem.ref 
 
-			yield return Instruction.Create(OpCodes.Ldc_I4, properties.Count);
-			yield return Instruction.Create(OpCodes.Newarr, tupleRef);
+			yield return Create(Ldc_I4, properties.Count);
+			yield return Create(Newarr, tupleRef);
 
 			for (var i = 0; i < properties.Count; i++) {
-				yield return Instruction.Create(OpCodes.Dup);
-				yield return Instruction.Create(OpCodes.Ldc_I4, i);
-				yield return Instruction.Create(OpCodes.Ldnull);
-				yield return Instruction.Create(OpCodes.Ldftn, partGetters [i]);
-				yield return Instruction.Create(OpCodes.Newobj, module.ImportReference(funcCtor));
-				yield return Instruction.Create(OpCodes.Ldstr, properties [i].Item1.Name);
-				yield return Instruction.Create(OpCodes.Newobj, module.ImportReference(tupleCtor));
-				yield return Instruction.Create(OpCodes.Stelem_Ref);
+				yield return Create(Dup);
+				yield return Create(Ldc_I4, i);
+				yield return Create(Ldnull);
+				yield return Create(Ldftn, partGetters [i]);
+				yield return Create(Newobj, module.ImportReference(funcCtor));
+				yield return Create(Ldstr, properties [i].Item1.Name);
+				yield return Create(Newobj, module.ImportReference(tupleCtor));
+				yield return Create(Stelem_Ref);
 			}
 		}
 
@@ -869,8 +907,9 @@ namespace Xamarin.Forms.Build.Tasks
 			if (CanAdd(parent, propertyName, valueNode, iXmlLineInfo, context))
 				return Add(parent, propertyName, valueNode, iXmlLineInfo, context);
 
-			throw new XamlParseException($"No property, bindable property, or event found for '{localName}', or mismatching type between value and property.", iXmlLineInfo);
+			throw new BuildException(MemberResolution, iXmlLineInfo, null, localName);
 		}
+
 
 		public static IEnumerable<Instruction> GetPropertyValue(VariableDefinition parent, XmlName propertyName, ILContext context, IXmlLineInfo lineInfo, out TypeReference propertyType)
 		{
@@ -887,7 +926,7 @@ namespace Xamarin.Forms.Build.Tasks
 			if (CanGet(parent, localName, context, out _))
 				return Get(parent, localName, lineInfo, context, out propertyType);
 
-			throw new XamlParseException($"Property {localName} is not found or does not have an accessible getter", lineInfo);
+			throw new BuildException(PropertyResolution, lineInfo, null, localName, parent.VariableType.FullName);
 		}
 
 		static FieldReference GetBindablePropertyReference(VariableDefinition parent, string namespaceURI, ref string localName, out bool attached, ILContext context, IXmlLineInfo iXmlLineInfo)
@@ -940,28 +979,35 @@ namespace Xamarin.Forms.Build.Tasks
 			var declaringType = context.Body.Method.DeclaringType;
 			while (declaringType.IsNested)
 				declaringType = declaringType.DeclaringType;
-			var handler = declaringType.AllMethods().FirstOrDefault(md => md.Name == value as string);
-			if (handler == null) 
-				throw new XamlParseException($"EventHandler \"{value}\" not found in type \"{declaringType}\"", iXmlLineInfo);
+			var handler = declaringType.AllMethods().FirstOrDefault(md => {
+				if (md.methodDef.Name != value as string)
+					return false;
 
-			//check if the handler signature matches the Invoke signature;
-			var invoke = module.ImportReference(eventinfo.EventType.ResolveCached().GetMethods().First(md => md.Name == "Invoke"));
-			invoke = invoke.ResolveGenericParameters(eventinfo.EventType, module);
-			if (!handler.ReturnType.InheritsFromOrImplements(invoke.ReturnType))
-				throw new XamlParseException($"Signature (return type) of EventHandler \"{context.Body.Method.DeclaringType.FullName}.{value}\" doesn't match the event type", iXmlLineInfo);
-			if (invoke.Parameters.Count != handler.Parameters.Count)
-				throw new XamlParseException($"Signature (number of arguments) of EventHandler \"{context.Body.Method.DeclaringType.FullName}.{value}\" doesn't match the event type", iXmlLineInfo);
-			if (!invoke.ContainsGenericParameter)
-				for (var i = 0; i < invoke.Parameters.Count;i++)
-					if (!invoke.Parameters[i].ParameterType.InheritsFromOrImplements(handler.Parameters[i].ParameterType))
-						throw new XamlParseException($"Signature (parameter {i}) of EventHandler \"{context.Body.Method.DeclaringType.FullName}.{value}\" doesn't match the event type", iXmlLineInfo);
-			//TODO check generic parameters if any
+				//check if the handler signature matches the Invoke signature;
+				var invoke = module.ImportReference(eventinfo.EventType.ResolveCached().GetMethods().First(eventmd => eventmd.Name == "Invoke"));
+				invoke = invoke.ResolveGenericParameters(eventinfo.EventType, module);
+				if (!md.methodDef.ReturnType.InheritsFromOrImplements(invoke.ReturnType) || invoke.Parameters.Count != md.methodDef.Parameters.Count)
+					return false;
+
+				if (!invoke.ContainsGenericParameter)
+					for (var i = 0; i < invoke.Parameters.Count;i++)
+						if (!invoke.Parameters[i].ParameterType.InheritsFromOrImplements(md.methodDef.Parameters[i].ParameterType))
+							return false;
+				//TODO check generic parameters if any
+
+				return true;
+			});
+			MethodReference handlerRef = null;
+			if (handler.methodDef != null)
+				handlerRef = handler.methodDef.ResolveGenericParameters(handler.declTypeRef, module);
+			if (handler.methodDef == null)
+				throw new BuildException(MissingEventHandler, iXmlLineInfo, null, value, declaringType);
 
 			//FIXME: eventually get the right ctor instead fo the First() one, just in case another one could exists (not even sure it's possible).
 			var ctor = module.ImportReference(eventinfo.EventType.ResolveCached().GetConstructors().First());
 			ctor = ctor.ResolveGenericParameters(eventinfo.EventType, module);
 
-			if (handler.IsStatic) {
+			if (handler.methodDef.IsStatic) {
 				yield return Create(Ldnull);
 			} else {
 				if (context.Root is VariableDefinition)
@@ -974,11 +1020,11 @@ namespace Xamarin.Forms.Build.Tasks
 					throw new InvalidProgramException();
 			}
 
-			if (handler.IsVirtual) {
+			if (handler.methodDef.IsVirtual) {
 				yield return Create(Ldarg_0);
-				yield return Create(Ldvirtftn, handler);
+				yield return Create(Ldvirtftn, handlerRef);
 			} else
-				yield return Create(Ldftn, handler);
+				yield return Create(Ldftn, handlerRef);
 
 			yield return Create(Newobj, module.ImportReference(ctor));
 			//Check if the handler has the same signature as the ctor (it should)
@@ -1313,7 +1359,7 @@ namespace Xamarin.Forms.Build.Tasks
 				if (!resourceNamesInUse.TryGetValue(parent, out var names))
 					resourceNamesInUse[parent] = (names = new List<string>());
 				if (names.Contains(key))
-					throw new XamlParseException($"A resource with the key '{key}' is already present in the ResourceDictionary.", lineInfo);
+					throw new BuildException(ResourceDictDuplicateKey, lineInfo, null, key);
 				names.Add(key);
 				return true;
 			}
@@ -1321,12 +1367,11 @@ namespace Xamarin.Forms.Build.Tasks
 			//is there a RD.Add() overrides that accepts this ?
 			var nodeTypeRef = context.Variables[node].VariableType;
 			var module = context.Body.Method.Module;
-			if (module.ImportMethodReference(("Xamarin.Forms.Core", "Xamarin.Forms", "ResourceDictionary"),
+			if (module.ImportMethodReference(module.GetTypeDefinition(("Xamarin.Forms.Core", "Xamarin.Forms", "ResourceDictionary")),
 											 methodName: "Add",
-											 parameterTypes: new[] { (nodeTypeRef.Scope.Name, nodeTypeRef.Namespace, nodeTypeRef.Name) }) != null)
+											 parameterTypes: new[] { (nodeTypeRef) }) != null)
 				return true;
-
-			throw new XamlParseException("resources in ResourceDictionary require a x:Key attribute", lineInfo);
+			throw new BuildException(ResourceDictMissingKey, lineInfo, null);
 		}
 
 		static IEnumerable<Instruction> Add(VariableDefinition parent, XmlName propertyName, INode node, IXmlLineInfo iXmlLineInfo, ILContext context)
@@ -1452,7 +1497,9 @@ namespace Xamarin.Forms.Build.Tasks
 			templateIl.Emit(OpCodes.Nop);
 			var templateContext = new ILContext(templateIl, loadTemplate.Body, module, parentValues)
 			{
-				Root = root
+				Root = root,
+				DefineDebug = parentContext.DefineDebug,
+				XamlFilePath = parentContext.XamlFilePath,
 			};
 			node.Accept(new CreateObjectVisitor(templateContext), null);
 			node.Accept(new SetNamescopesAndRegisterNamesVisitor(templateContext), null);

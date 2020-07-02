@@ -5,23 +5,16 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Xamarin.Forms.Internals;
+using Xamarin.Forms.Xaml.Diagnostics;
 
 namespace Xamarin.Forms
 {
 	public abstract partial class Element : BindableObject, IElement, INameScope, IElementController
 	{
-
 		public static readonly BindableProperty MenuProperty = BindableProperty.CreateAttached(nameof(Menu), typeof(Menu), typeof(Element), null);
 
-		public static Menu GetMenu(BindableObject bindable)
-		{
-			return (Menu)bindable.GetValue(MenuProperty);
-		}
-
-		public static void SetMenu(BindableObject bindable, Menu menu)
-		{
-			bindable.SetValue(MenuProperty, menu);
-		}
+		public static Menu GetMenu(BindableObject bindable) => (Menu)bindable.GetValue(MenuProperty);
+		public static void SetMenu(BindableObject bindable, Menu menu) => bindable.SetValue(MenuProperty, menu);
 
 		internal static readonly ReadOnlyCollection<Element> EmptyChildren = new ReadOnlyCollection<Element>(new Element[0]);
 
@@ -60,8 +53,8 @@ namespace Xamarin.Forms
 
 		public string ClassId
 		{
-			get { return (string)GetValue(ClassIdProperty); }
-			set { SetValue(ClassIdProperty, value); }
+			get => (string)GetValue(ClassIdProperty);
+			set => SetValue(ClassIdProperty, value);
 		}
 
 		public IList<Effect> Effects
@@ -121,6 +114,20 @@ namespace Xamarin.Forms
 		}
 
 		internal virtual ReadOnlyCollection<Element> LogicalChildrenInternal => EmptyChildren;
+		internal IEnumerable<Element> AllChildren
+		{
+			get
+			{
+				foreach (var child in LogicalChildrenInternal)
+					yield return child;
+
+				foreach (var child in ChildrenNotDrawnByThisElement)
+					yield return child;
+			}
+		}
+
+		internal virtual IEnumerable<Element> ChildrenNotDrawnByThisElement => EmptyChildren;
+
 
 		[EditorBrowsable(EditorBrowsableState.Never)]
 		public ReadOnlyCollection<Element> LogicalChildren => LogicalChildrenInternal;
@@ -151,10 +158,7 @@ namespace Xamarin.Forms
 		[EditorBrowsable(EditorBrowsableState.Never)]
 		public Element RealParent { get; private set; }
 
-		Dictionary<BindableProperty, string> DynamicResources
-		{
-			get { return _dynamicResources ?? (_dynamicResources = new Dictionary<BindableProperty, string>()); }
-		}
+		Dictionary<BindableProperty, string> DynamicResources => _dynamicResources ?? (_dynamicResources = new Dictionary<BindableProperty, string>());
 
 		void IElement.AddResourcesChangedListener(Action<object, ResourcesChangedEventArgs> onchanged)
 		{
@@ -173,7 +177,13 @@ namespace Xamarin.Forms
 				OnPropertyChanging();
 
 				if (RealParent != null)
+				{
 					((IElement)RealParent).RemoveResourcesChangedListener(OnParentResourcesChanged);
+
+					if(value != null && (RealParent is Layout || RealParent is IControlTemplated))
+						Log.Warning("Element", $"{this} is already a child of {RealParent}. Remove {this} from {RealParent} before adding to {value}.");
+				}
+
 				RealParent = value;
 				if (RealParent != null)
 				{
@@ -191,11 +201,15 @@ namespace Xamarin.Forms
 					SetInheritedBindingContext(this, null);
 				}
 
+				VisualDiagnostics.SendVisualTreeChanged(value, this);
+
 				OnParentSet();
 
 				OnPropertyChanged();
 			}
 		}
+
+		internal bool IsTemplateRoot { get; set; }
 
 		void IElement.RemoveResourcesChangedListener(Action<object, ResourcesChangedEventArgs> onchanged)
 		{
@@ -330,17 +344,18 @@ namespace Xamarin.Forms
 		protected virtual void OnParentSet()
 		{
 			ParentSet?.Invoke(this, EventArgs.Empty);
-			ApplyStyleSheetsOnParentSet();
+			ApplyStyleSheets();
 			(this as IPropertyPropagationController)?.PropagatePropertyChanged(null);
 		}
 
 		protected override void OnPropertyChanged([CallerMemberName] string propertyName = null)
 		{
 			base.OnPropertyChanged(propertyName);
-
-			IPropertyPropagationController titleView = Shell.GetTitleView(this) ?? NavigationPage.GetTitleView(this);
-			if(titleView != null)
-				PropertyPropagationExtensions.PropagatePropertyChanged(propertyName, this, new[] { titleView });
+			foreach(var logicalChildren in ChildrenNotDrawnByThisElement)
+			{
+				if(logicalChildren is IPropertyPropagationController controller)
+					PropertyPropagationExtensions.PropagatePropertyChanged(propertyName, this, new[] { logicalChildren });
+			}
 
 			if (_effects == null || _effects.Count == 0)
 				return;
@@ -373,7 +388,7 @@ namespace Xamarin.Forms
 		internal virtual void OnParentResourcesChanged(object sender, ResourcesChangedEventArgs e)
 		{
 			if (e == ResourcesChangedEventArgs.StyleSheets)
-				ApplyStyleSheetsOnParentSet();
+				ApplyStyleSheets();
 			else
 				OnParentResourcesChanged(e.Values);
 		}
@@ -394,7 +409,10 @@ namespace Xamarin.Forms
 
 		internal virtual void OnResourcesChanged(object sender, ResourcesChangedEventArgs e)
 		{
-			OnResourcesChanged(e.Values);
+			if (e == ResourcesChangedEventArgs.StyleSheets)
+				ApplyStyleSheets();
+			else
+				OnResourcesChanged(e.Values);
 		}
 
 		internal void OnResourcesChanged(IEnumerable<KeyValuePair<string, object>> values)
@@ -441,49 +459,11 @@ namespace Xamarin.Forms
 		{
 			base.OnSetDynamicResource(property, key);
 			DynamicResources[property] = key;
-			object value;
-			if (this.TryGetResource(key, out value))
+			if (this.TryGetResource(key, out var value))
 				OnResourceChanged(property, value);
 		}
 
 		internal event EventHandler ParentSet;
-
-		internal static void SetFlowDirectionFromParent(Element child)
-		{
-			IFlowDirectionController controller = child as IFlowDirectionController;
-			if (controller == null)
-				return;
-
-			if (controller.EffectiveFlowDirection.IsImplicit())
-			{
-				var parentView = child.Parent as IFlowDirectionController;
-				if (parentView == null)
-					return;
-
-				var flowDirection = parentView.EffectiveFlowDirection.ToFlowDirection();
-
-				if (flowDirection != controller.EffectiveFlowDirection.ToFlowDirection())
-				{
-					controller.EffectiveFlowDirection = flowDirection.ToEffectiveFlowDirection();
-				}
-			}
-		}
-
-		internal static void SetVisualfromParent(Element child)
-		{
-			IVisualController controller = child as IVisualController;
-			if (controller == null)
-				return;
-
-			if (controller.Visual != VisualMarker.MatchParent)
-			{
-				controller.EffectiveVisual = controller.Visual;
-				return;
-			}
-
-			if (child.Parent is IVisualController parentView)
-				controller.EffectiveVisual = parentView.EffectiveVisual;
-		}
 
 		internal virtual void SetChildInheritedBindingContext(Element child, object context)
 		{

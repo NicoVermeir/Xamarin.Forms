@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel;
+using Windows.UI.Text;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Media;
@@ -16,6 +17,7 @@ namespace Xamarin.Forms.Platform.UWP
 		Brush _defaultTextColorFocusBrush;
 
 		bool _fontApplied;
+		bool _isDisposed;
 
 		FormsTextBox _queryTextBox;
 		FormsCancelButton _cancelButton;
@@ -28,7 +30,12 @@ namespace Xamarin.Forms.Platform.UWP
 			{
 				if (Control == null)
 				{
-					SetNativeControl(new AutoSuggestBox { QueryIcon = new SymbolIcon(Symbol.Find) });
+					AutoSuggestBox nativeAutoSuggestBox = new AutoSuggestBox
+					{
+						QueryIcon = new SymbolIcon(Symbol.Find),
+						Style = Windows.UI.Xaml.Application.Current.Resources["FormsAutoSuggestBoxStyle"] as Windows.UI.Xaml.Style
+					};
+					SetNativeControl(nativeAutoSuggestBox);
 					Control.QuerySubmitted += OnQuerySubmitted;
 					Control.TextChanged += OnTextChanged;
 					Control.Loaded += OnControlLoaded;
@@ -38,7 +45,9 @@ namespace Xamarin.Forms.Platform.UWP
 				UpdateText();
 				UpdatePlaceholder();
 				UpdateCancelButtonColor();
-				UpdateAlignment();
+				UpdateHorizontalTextAlignment();
+				UpdateVerticalTextAlignment();
+				UpdateCharacterSpacing();
 				UpdateFont();
 				UpdateTextColor();
 				UpdatePlaceholderColor();
@@ -52,16 +61,20 @@ namespace Xamarin.Forms.Platform.UWP
 		{
 			base.OnElementPropertyChanged(sender, e);
 
-			if (e.PropertyName == SearchBar.TextProperty.PropertyName)
+			if (e.IsOneOf(SearchBar.TextProperty, SearchBar.TextTransformProperty))
 				UpdateText();
 			else if (e.PropertyName == SearchBar.PlaceholderProperty.PropertyName)
 				UpdatePlaceholder();
 			else if (e.PropertyName == SearchBar.CancelButtonColorProperty.PropertyName)
 				UpdateCancelButtonColor();
 			else if (e.PropertyName == SearchBar.HorizontalTextAlignmentProperty.PropertyName)
-				UpdateAlignment();
+				UpdateHorizontalTextAlignment();
+			else if (e.PropertyName == SearchBar.VerticalTextAlignmentProperty.PropertyName)
+				UpdateVerticalTextAlignment();
 			else if (e.PropertyName == SearchBar.FontAttributesProperty.PropertyName)
 				UpdateFont();
+			else if (e.PropertyName == SearchBar.CharacterSpacingProperty.PropertyName)
+				UpdateCharacterSpacing();
 			else if (e.PropertyName == SearchBar.FontFamilyProperty.PropertyName)
 				UpdateFont();
 			else if (e.PropertyName == SearchBar.FontSizeProperty.PropertyName)
@@ -71,7 +84,7 @@ namespace Xamarin.Forms.Platform.UWP
 			else if (e.PropertyName == SearchBar.PlaceholderColorProperty.PropertyName)
 				UpdatePlaceholderColor();
 			else if (e.PropertyName == VisualElement.FlowDirectionProperty.PropertyName)
-				UpdateAlignment();
+				UpdateHorizontalTextAlignment();
 			else if (e.PropertyName == Specifics.IsSpellCheckEnabledProperty.PropertyName)
 				UpdateIsSpellCheckEnabled();
 			else if(e.PropertyName == InputView.MaxLengthProperty.PropertyName)
@@ -92,7 +105,8 @@ namespace Xamarin.Forms.Platform.UWP
 				_cancelButton.ReadyChanged += (o, args) => UpdateCancelButtonColor();
 			}
 
-			UpdateAlignment();
+			UpdateHorizontalTextAlignment();
+			UpdateVerticalTextAlignment();
 			UpdateTextColor();
 			UpdatePlaceholderColor();
 			UpdateBackgroundColor();
@@ -125,12 +139,20 @@ namespace Xamarin.Forms.Platform.UWP
 			((IElementController)Element).SetValueFromRenderer(SearchBar.TextProperty, sender.Text);
 		}
 
-		void UpdateAlignment()
+		void UpdateHorizontalTextAlignment()
 		{
 			if (_queryTextBox == null)
 				return;
 
 			_queryTextBox.TextAlignment = Element.HorizontalTextAlignment.ToNativeTextAlignment(((IVisualElementController)Element).EffectiveFlowDirection);
+		}
+
+		void UpdateVerticalTextAlignment()
+		{
+			if (_queryTextBox == null)
+				return;
+
+			_queryTextBox.VerticalContentAlignment = Element.VerticalTextAlignment.ToNativeVerticalAlignment();
 		}
 
 		void UpdateCancelButtonColor()
@@ -186,6 +208,11 @@ namespace Xamarin.Forms.Platform.UWP
 			_fontApplied = true;
 		}
 
+		void UpdateCharacterSpacing()
+		{
+			Control.CharacterSpacing = Element.CharacterSpacing.ToEm();
+		}
+
 		void UpdatePlaceholder()
 		{
 			Control.PlaceholderText = Element.Placeholder ?? string.Empty;
@@ -207,7 +234,7 @@ namespace Xamarin.Forms.Platform.UWP
 
 		void UpdateText()
 		{
-			Control.Text = Element.Text ?? string.Empty;
+			Control.Text = Element.UpdateFormsText(Element.Text, Element.TextTransform);
 		}
 
 		void UpdateTextColor()
@@ -286,6 +313,22 @@ namespace Xamarin.Forms.Platform.UWP
 			{
 				_queryTextBox.ClearValue(Windows.UI.Xaml.Controls.Control.BackgroundProperty);
 			}
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			if (_isDisposed)
+				return;
+
+			if (disposing && Control != null)
+			{
+				Control.QuerySubmitted -= OnQuerySubmitted;
+				Control.TextChanged -= OnTextChanged;
+				Control.Loaded -= OnControlLoaded;
+			}
+
+			_isDisposed = true;
+			base.Dispose(disposing);
 		}
 	}
 }

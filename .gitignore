@@ -66,3 +66,10 @@ AndroidNative/gradlew.bat
 tools/
 !tools/mdoc/**/*
 caketools/
+*.binlog
+.ionide/**
+/.nuspec
+.XamarinFormsVersionFile.txt
+.idea
+Visual Studio 2019/**
+build/packages

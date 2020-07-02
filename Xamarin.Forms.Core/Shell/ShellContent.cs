@@ -9,6 +9,7 @@ using System.Linq;
 #endif
 
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Xamarin.Forms.Internals;
 
 namespace Xamarin.Forms
@@ -28,6 +29,9 @@ namespace Xamarin.Forms
 		public static readonly BindableProperty ContentTemplateProperty =
 			BindableProperty.Create(nameof(ContentTemplate), typeof(DataTemplate), typeof(ShellContent), null, BindingMode.OneTime);
 
+		internal static readonly BindableProperty QueryAttributesProperty =
+			BindableProperty.CreateAttached("QueryAttributes", typeof(IDictionary<string, string>), typeof(ShellContent), defaultValue: null, propertyChanged: OnQueryAttributesPropertyChanged);
+
 		public MenuItemCollection MenuItems => (MenuItemCollection)GetValue(MenuItemsProperty);
 
 		public object Content {
@@ -41,6 +45,9 @@ namespace Xamarin.Forms
 		}
 
 		Page IShellContentController.Page => ContentCache;
+
+		EventHandler _isPageVisibleChanged;
+		event EventHandler IShellContentController.IsPageVisibleChanged { add => _isPageVisibleChanged += value; remove => _isPageVisibleChanged -= value; }
 
 		Page IShellContentController.GetOrCreateContent()
 		{
@@ -59,16 +66,11 @@ namespace Xamarin.Forms
 				ContentCache = result;
 			}
 
-			if (result != null && result.Parent != this)
-				OnChildAdded(result);
-
 			if (result == null)
 				throw new InvalidOperationException($"No Content found for {nameof(ShellContent)}, Title:{Title}, Route {Route}");
 
-			if (_delayedQueryParams != null && result  != null) {
-				ApplyQueryAttributes(result, _delayedQueryParams);
-				_delayedQueryParams = null;
-			}
+			if (GetValue(QueryAttributesProperty) is IDictionary<string, string> delayedQueryParams)
+				result.SetValue(QueryAttributesProperty, delayedQueryParams);
 
 			return result;
 		}
@@ -81,25 +83,105 @@ namespace Xamarin.Forms
 		IList<Element> _logicalChildren = new List<Element>();
 		ReadOnlyCollection<Element> _logicalChildrenReadOnly;
 
-		public ShellContent()
+		public ShellContent() => ((INotifyCollectionChanged)MenuItems).CollectionChanged += MenuItemsCollectionChanged;
+
+		internal bool IsVisibleContent => Parent is ShellSection shellSection && shellSection.IsVisibleSection && shellSection.CurrentItem == this;
+		internal override ReadOnlyCollection<Element> LogicalChildrenInternal => _logicalChildrenReadOnly ?? (_logicalChildrenReadOnly = new ReadOnlyCollection<Element>(_logicalChildren));
+
+		internal override void SendDisappearing()
 		{
-			((INotifyCollectionChanged)MenuItems).CollectionChanged += MenuItemsCollectionChanged;
+			base.SendDisappearing();
+			((ContentCache ?? Content) as Page)?.SendDisappearing();
 		}
 
+		internal override void SendAppearing()
+		{
+			// only fire Appearing when the Content Page exists on the ShellContent
+			var content = ContentCache ?? Content;
+			if (content == null)
+				return;
 
-		internal override ReadOnlyCollection<Element> LogicalChildrenInternal => _logicalChildrenReadOnly ?? (_logicalChildrenReadOnly = new ReadOnlyCollection<Element>(_logicalChildren));
+			base.SendAppearing();
+
+			SendPageAppearing((ContentCache ?? Content) as Page);
+		}
+
+		void SendPageAppearing(Page page)
+		{
+			if (page == null)
+				return;
+
+			if (page.Parent == null)
+			{
+				page.ParentSet += OnPresentedPageParentSet;
+				void OnPresentedPageParentSet(object sender, EventArgs e)
+				{
+					page.SendAppearing();
+					(sender as Page).ParentSet -= OnPresentedPageParentSet;
+				}
+			}
+			else
+			{
+				page.SendAppearing();
+			}
+		}
+
+		protected override void OnChildAdded(Element child)
+		{
+			base.OnChildAdded(child);
+			if (child is Page page)
+			{
+				if (IsVisibleContent && page.IsVisible)
+				{
+					SendAppearing();
+					SendPageAppearing(page);
+				}
+
+				page.PropertyChanged += OnPagePropertyChanged;
+				_isPageVisibleChanged?.Invoke(this, EventArgs.Empty);
+			}
+		}
+
+		protected override void OnChildRemoved(Element child)
+		{
+			base.OnChildRemoved(child);
+			if (child is Page page)
+			{
+				page.PropertyChanged -= OnPagePropertyChanged;
+			}
+		}
+		
+
+		void OnPagePropertyChanged(object sender, PropertyChangedEventArgs e)
+		{
+			if (e.PropertyName == Page.IsVisibleProperty.PropertyName)
+				_isPageVisibleChanged?.Invoke(this, EventArgs.Empty);
+		}
 
 		Page ContentCache
 		{
-			get { return _contentCache; }
+			get => _contentCache;
 			set
 			{
+				if (_contentCache == value)
+					return;
+
+				var oldCache = _contentCache;
 				_contentCache = value;
+				if(oldCache != null)
+					OnChildRemoved(oldCache);
+
+				if (value != null && value.Parent != this)
+				{
+					_logicalChildren.Add(value);
+					OnChildAdded(value);
+				}
+
 				if (Parent != null)
 					((ShellSection)Parent).UpdateDisplayedPage();
 			}
 		}
-
+		
 		public static implicit operator ShellContent(TemplatedPage page)
 		{
 			var shellContent = new ShellContent();
@@ -109,8 +191,9 @@ namespace Xamarin.Forms
 			shellContent.Route = Routing.GenerateImplicitRoute(pageRoute);
 
 			shellContent.Content = page;
-			shellContent.SetBinding(TitleProperty, new Binding("Title", BindingMode.OneWay, source: page));
-			shellContent.SetBinding(IconProperty, new Binding("Icon", BindingMode.OneWay, source: page));
+			shellContent.SetBinding(TitleProperty, new Binding(nameof(Title), BindingMode.OneWay, source: page));
+			shellContent.SetBinding(IconProperty, new Binding(nameof(Icon), BindingMode.OneWay, source: page));
+			shellContent.SetBinding(FlyoutIconProperty, new Binding(nameof(FlyoutIcon), BindingMode.OneWay, source: page));
 
 			return shellContent;
 		}
@@ -124,7 +207,6 @@ namespace Xamarin.Forms
 				// deparent old item
 				if (oldValue is Page oldElement)
 				{
-					shellContent.OnChildRemoved(oldElement);
 					shellContent.ContentCache = null;
 				}
 
@@ -132,10 +214,7 @@ namespace Xamarin.Forms
 				shellContent._logicalChildren.Clear();
 				if (newValue is Page newElement)
 				{
-					shellContent._logicalChildren.Add((Element)newValue);
 					shellContent.ContentCache = newElement;
-					// parent new item
-					shellContent.OnChildAdded(newElement);
 				}
 				else if(newValue != null)
 				{
@@ -144,7 +223,7 @@ namespace Xamarin.Forms
 			}
 
 			if (shellContent.Parent?.Parent is ShellItem shellItem)
-				shellItem?.SendStructureChanged();
+				shellItem.SendStructureChanged();
 		}
 
 		void MenuItemsCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
@@ -158,26 +237,30 @@ namespace Xamarin.Forms
 					OnChildRemoved(el);
 		}
 
-		IDictionary<string, string> _delayedQueryParams;
 		internal override void ApplyQueryAttributes(IDictionary<string, string> query)
 		{
 			base.ApplyQueryAttributes(query);
-			ApplyQueryAttributes(this, query);
+			SetValue(QueryAttributesProperty, query);
 
-			if (Content == null) {
-				_delayedQueryParams = query;
-				return;
-			}
-			ApplyQueryAttributes(Content as Page, query);
+			if (ContentCache is BindableObject bindable)
+				bindable.SetValue(QueryAttributesProperty, query);
 		}
 
-		internal static void ApplyQueryAttributes(object content, IDictionary<string, string> query)
+		static void OnQueryAttributesPropertyChanged(BindableObject bindable, object oldValue, object newValue)
 		{
+			ApplyQueryAttributes(bindable, newValue as IDictionary<string, string>, oldValue as IDictionary<string, string>);
+		}
+
+		static void ApplyQueryAttributes(object content, IDictionary<string, string> query, IDictionary<string, string> oldQuery)
+		{
+			query = query ?? new Dictionary<string, string>();
+			oldQuery = oldQuery ?? new Dictionary<string, string>();
+
 			if (content is IQueryAttributable attributable)
 				attributable.ApplyQueryAttributes(query);
 
 			if (content is BindableObject bindable && bindable.BindingContext != null && content != bindable.BindingContext)
-				ApplyQueryAttributes(bindable.BindingContext, query);
+				ApplyQueryAttributes(bindable.BindingContext, query, oldQuery);
 
 			var type = content.GetType();
 			var typeInfo = type.GetTypeInfo();
@@ -196,6 +279,13 @@ namespace Xamarin.Forms
 
 					if (prop != null && prop.CanWrite && prop.SetMethod.IsPublic)
 						prop.SetValue(content, value);
+				}
+				else if (oldQuery.TryGetValue(attrib.QueryId, out var oldValue))
+				{
+					PropertyInfo prop = type.GetRuntimeProperty(attrib.Name);
+
+					if (prop != null && prop.CanWrite && prop.SetMethod.IsPublic)
+						prop.SetValue(content, null);
 				}
 			}
 		}

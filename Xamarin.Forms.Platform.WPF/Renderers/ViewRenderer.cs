@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Diagnostics;
+using System.ComponentModel; 
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using WControl = System.Windows.Controls.Control;
+using WAutomationProperties = System.Windows.Automation.AutomationProperties;
 
 namespace Xamarin.Forms.Platform.WPF
 {
@@ -24,7 +25,6 @@ namespace Xamarin.Forms.Platform.WPF
 			new List<EventHandler<VisualElementChangedEventArgs>>();
 
 		VisualElementTracker _tracker;
-		WControl _wcontrol => Control as WControl;
 		bool _disposed;
 
 		IElementController ElementController => Element as IElementController;
@@ -136,9 +136,9 @@ namespace Xamarin.Forms.Platform.WPF
 		{
 			if (e.PropertyName == VisualElement.IsEnabledProperty.PropertyName)
 				UpdateEnabled();
-			else if (e.PropertyName == Frame.HeightProperty.PropertyName)
+			else if (e.PropertyName == VisualElement.HeightProperty.PropertyName)
 				UpdateHeight();
-			else if (e.PropertyName == Frame.WidthProperty.PropertyName)
+			else if (e.PropertyName == VisualElement.WidthProperty.PropertyName)
 				UpdateWidth();
 			else if (e.PropertyName == VisualElement.BackgroundColorProperty.PropertyName)
 				UpdateBackground();
@@ -148,6 +148,14 @@ namespace Xamarin.Forms.Platform.WPF
 				UpdateTabStop();
 			else if (e.PropertyName == VisualElement.TabIndexProperty.PropertyName)
 				UpdateTabIndex();
+			else if (e.PropertyName == Xamarin.Forms.Element.AutomationIdProperty.PropertyName)
+				UpdateAutomationId();
+			else if (e.PropertyName == AutomationProperties.NameProperty.PropertyName)
+				UpdateAutomationName();
+			else if (e.PropertyName == AutomationProperties.LabeledByProperty.PropertyName)
+				UpdateAutomationLabeledBy();
+			else if (e.PropertyName == AutomationProperties.HelpTextProperty.PropertyName)
+				UpdateAutomationHelpText();
 		}
 
 		protected virtual void OnGotFocus(object sender, RoutedEventArgs args)
@@ -211,7 +219,8 @@ namespace Xamarin.Forms.Platform.WPF
 
 		protected virtual void UpdateBackground()
 		{
-			_wcontrol?.UpdateDependencyColor(WControl.BackgroundProperty, Element.BackgroundColor);
+			if(Control is WControl wControl)
+				wControl?.UpdateDependencyColor(WControl.BackgroundProperty, Element.BackgroundColor);
 		}
 
 		protected virtual void UpdateHeight()
@@ -235,28 +244,35 @@ namespace Xamarin.Forms.Platform.WPF
 			UpdateEnabled();
 			UpdateTabStop();
 			UpdateTabIndex();
+			UpdateAutomationId();
+			var isInAccessibleTree = AutomationProperties.GetIsInAccessibleTree(Element);
+			if (!(isInAccessibleTree.HasValue && !isInAccessibleTree.Value))
+			{
+				UpdateAutomationLabeledBy();
+				UpdateAutomationName();
+				UpdateAutomationHelpText();
+			}
 		}
 
 		internal virtual void OnModelFocusChangeRequested(object sender, VisualElement.FocusRequestArgs args)
 		{
-			if (_wcontrol == null)
+			if (Control == null)
 				return;
 
 			if (args.Focus)
-				args.Result = _wcontrol.Focus();
+				args.Result = Control.Focus();
 			else
 			{
-				UnfocusControl(_wcontrol);
+				UnfocusControl(Control);
 				args.Result = true;
 			}
 		}
 
-		internal void UnfocusControl(WControl control)
+		internal void UnfocusControl(FrameworkElement control)
 		{
 			if (control == null || !control.IsEnabled)
 				return;
-			control.IsEnabled = false;
-			control.IsEnabled = true;
+			control.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next)); 
 		}
 
 		void HandleTrackerUpdated(object sender, EventArgs e)
@@ -266,26 +282,62 @@ namespace Xamarin.Forms.Platform.WPF
 
 		protected void UpdateTabStop()
 		{
-			if (_wcontrol == null)
-				return;
-			_wcontrol.IsTabStop = Element.IsTabStop;
+			if (Control is WControl wControl)
+			{
+				wControl.IsTabStop = Element.IsTabStop;
 
-			// update TabStop of children for complex controls (like as DatePicker, TimePicker, SearchBar and Stepper)
-			var children = FrameworkElementExtensions.GetChildren<WControl>(_wcontrol);
-			foreach (var child in children)
-				child.IsTabStop = _wcontrol.IsTabStop;
+				// update TabStop of children for complex controls (like as DatePicker, TimePicker, SearchBar and Stepper)
+				var children = FrameworkElementExtensions.GetChildren<WControl>(Control);
+				foreach (var child in children)
+					child.IsTabStop = wControl.IsTabStop;
+			}
 		}
 
 		protected void UpdateTabIndex()
 		{
-			if (_wcontrol != null)
-				_wcontrol.TabIndex = Element.TabIndex;
+			if (Control is WControl wControl)
+				wControl.TabIndex = Element.TabIndex;
+		}
+
+		protected void UpdateAutomationId()
+		{
+			if (!string.IsNullOrEmpty(Element.AutomationId))
+			{
+				WAutomationProperties.SetAutomationId(Control, Element.AutomationId);
+			}
+		}
+
+		protected void UpdateAutomationName()
+		{
+			var name = AutomationProperties.GetName(Element);
+			if (!string.IsNullOrEmpty(name))
+			{
+				WAutomationProperties.SetName(Control, name);
+			}
+		}
+
+		protected void UpdateAutomationLabeledBy()
+		{
+			var label = AutomationProperties.GetLabeledBy(Element);
+			if(label != null)
+			{
+				WAutomationProperties.SetLabeledBy(Control, Platform.GetRenderer(label)?.GetNativeElement());
+			}
+		}
+
+		protected void UpdateAutomationHelpText()
+		{
+			var helpText = AutomationProperties.GetHelpText(Element);
+			if (!string.IsNullOrEmpty(helpText))
+			{
+				WAutomationProperties.SetHelpText(Control, helpText);
+			}
 		}
 
 		protected virtual void UpdateEnabled()
 		{
-			if (_wcontrol != null)
-				_wcontrol.IsEnabled = Element.IsEnabled;
+			if (Control != null)
+				Control.IsEnabled = Element.IsEnabled;
 		}
 
 		void UpdateAlignment()

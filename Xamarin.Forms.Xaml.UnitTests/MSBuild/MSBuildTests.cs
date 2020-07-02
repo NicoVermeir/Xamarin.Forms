@@ -1,11 +1,14 @@
 ﻿using Microsoft.Build.Locator;
+using Mono.Cecil;
 using NUnit.Framework;
 using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Xml.Linq;
 using static Xamarin.Forms.MSBuild.UnitTests.MSBuildXmlExtensions;
+using IOPath = System.IO.Path;
 
 namespace Xamarin.Forms.MSBuild.UnitTests
 {
@@ -14,10 +17,7 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 	[Category("LongRunning")]
 	public class MSBuildTests
 	{
-		const string XamarinFormsTargets = "Xamarin.Forms.targets";
-
-		static readonly string [] references = new []
-		{
+		static readonly string [] references = {
 			"mscorlib",
 			"System",
 			"Xamarin.Forms.Core.dll",
@@ -63,30 +63,38 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		public void SetUp ()
 		{
 			testDirectory = TestContext.CurrentContext.TestDirectory;
-			tempDirectory = Path.Combine (testDirectory, "temp", TestContext.CurrentContext.Test.Name);
-			intermediateDirectory = Path.Combine (tempDirectory, "obj", "Debug");
+			tempDirectory = IOPath.Combine (testDirectory, "temp", TestContext.CurrentContext.Test.Name);
+			intermediateDirectory = IOPath.Combine (tempDirectory, "obj", "Debug");
 			Directory.CreateDirectory (tempDirectory);
 
-			//We need to copy Xamarin.Forms.targets to the test directory, to reliably import them
-			var xamarinFormsTargets = Path.Combine (testDirectory, "..", "..", "..", "..", ".nuspec", XamarinFormsTargets);
-			if (!File.Exists (xamarinFormsTargets)) {
+			//copy _Directory.Build.[props|targets] in test/
+			var props = IOPath.Combine(testDirectory, "..", "..", "..", "MSBuild", "_Directory.Build.props");
+			var targets = IOPath.Combine(testDirectory, "..", "..", "..", "MSBuild", "_Directory.Build.targets");
+			if (!File.Exists(props))
+			{
 				//NOTE: VSTS may be running tests in a staging directory, so we can use an environment variable to find the source
-				//	https://docs.microsoft.com/en-us/vsts/build-release/concepts/definitions/build/variables?view=vsts&tabs=batch#buildsourcesdirectory
-				var sourcesDirectory = Environment.GetEnvironmentVariable ("BUILD_SOURCESDIRECTORY");
-				if (!string.IsNullOrEmpty (sourcesDirectory)) {
-					xamarinFormsTargets = Path.Combine (sourcesDirectory, ".nuspec", XamarinFormsTargets);
-					if (!File.Exists (xamarinFormsTargets)) {
-						Assert.Fail ("Unable to find Xamarin.Forms.targets at path: " + xamarinFormsTargets);
-					}
-				} else {
-					Assert.Fail ("Unable to find Xamarin.Forms.targets at path: " + xamarinFormsTargets);
+				//https://docs.microsoft.com/en-us/vsts/build-release/concepts/definitions/build/variables?view=vsts&tabs=batch#buildsourcesdirectory
+				var sourcesDirectory = Environment.GetEnvironmentVariable("BUILD_SOURCESDIRECTORY");
+				if (!string.IsNullOrEmpty(sourcesDirectory)) {
+					props = IOPath.Combine(sourcesDirectory, "Xamarin.Forms.Xaml.UnitTests", "MSBuild", "_Directory.Build.props");
+					targets = IOPath.Combine(sourcesDirectory, "Xamarin.Forms.Xaml.UnitTests", "MSBuild", "_Directory.Build.targets");
+
+					if (!File.Exists(props))
+						Assert.Fail("Unable to find _Directory.Build.props at path: " + props);
 				}
+				else
+					Assert.Fail("Unable to find _Directory.Build.props at path: " + props);
+
+				Directory.CreateDirectory(IOPath.Combine(testDirectory, "..", "..", "..", "..",  ".nuspec"));
+				foreach (var file in Directory.GetFiles(IOPath.Combine(sourcesDirectory, ".nuspec"), "*.targets"))
+					File.Copy(file, IOPath.Combine(testDirectory, "..", "..", "..", "..", ".nuspec", IOPath.GetFileName(file)), true);
+				foreach (var file in Directory.GetFiles(IOPath.Combine(sourcesDirectory, ".nuspec"), "*.props"))
+					File.Copy(file, IOPath.Combine(testDirectory, "..", "..", "..", "..", ".nuspec", IOPath.GetFileName(file)), true);
+				File.Copy(IOPath.Combine(sourcesDirectory, "Directory.Build.props"), IOPath.Combine(testDirectory, "..", "..", "..", "..", "Directory.Build.props"), true);
 			}
 
-			//Copy all *.targets files to the test directory
-			foreach (var file in Directory.GetFiles (Path.GetDirectoryName (xamarinFormsTargets), "*.targets")) {
-				File.Copy (file, Path.Combine (testDirectory, Path.GetFileName (file)), true);
-			}
+			File.Copy(props, IOPath.Combine(tempDirectory, "Directory.Build.props"), true);
+			File.Copy(targets, IOPath.Combine(tempDirectory, "Directory.Build.targets"), true);
 		}
 
 		[TearDown]
@@ -112,7 +120,6 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		/// <param name="sdkStyle">If true, uses a new SDK-style project</param>
 		XElement NewProject (bool sdkStyle)
 		{
-			var path = Path.GetTempFileName ();
 			var project = NewElement ("Project");
 
 			var propertyGroup = NewElement ("PropertyGroup");
@@ -120,18 +127,21 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 				project.WithAttribute ("Sdk", "Microsoft.NET.Sdk");
 				propertyGroup.Add (NewElement ("TargetFramework").WithValue ("netstandard2"));
 				//NOTE: we don't want SDK-style projects to auto-add files, tests should be able to control this
-				propertyGroup.Add (NewElement ("EnableDefaultCompileItems").WithValue ("False"));
+				propertyGroup.Add(NewElement("EnableDefaultCompileItems").WithValue("False"));
+				propertyGroup.Add(NewElement("EnableDefaultEmbeddedResourceItems").WithValue("False"));
 				//NOTE: SDK-style output paths are different
 				if (!intermediateDirectory.EndsWith ("netstandard2"))
-					intermediateDirectory = Path.Combine (intermediateDirectory, "netstandard2");
+					intermediateDirectory = IOPath.Combine (intermediateDirectory, "netstandard2");
 			} else {
 				propertyGroup.Add (NewElement ("Configuration").WithValue ("Debug"));
 				propertyGroup.Add (NewElement ("Platform").WithValue ("AnyCPU"));
 				propertyGroup.Add (NewElement ("OutputType").WithValue ("Library"));
 				propertyGroup.Add (NewElement ("OutputPath").WithValue ("bin\\Debug"));
 				propertyGroup.Add (NewElement ("TargetFrameworkVersion").WithValue ("v4.7"));
+				propertyGroup.Add(NewElement("RootNamespace").WithValue("test"));
 			}
 			propertyGroup.Add(NewElement("_XFBuildTasksLocation").WithValue($"{testDirectory}\\"));
+
 
 			project.Add (propertyGroup);
 
@@ -139,7 +149,7 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 			foreach (var assembly in references) {
 				var reference = NewElement ("Reference").WithAttribute ("Include", assembly);
 				if (assembly.EndsWith (".dll", StringComparison.OrdinalIgnoreCase)) {
-					reference.Add (NewElement ("HintPath").WithValue (Path.Combine ("..", "..", assembly)));
+					reference.Add (NewElement ("HintPath").WithValue (IOPath.Combine ("..", "..", assembly)));
 				} else if (sdkStyle) {
 					//NOTE: SDK-style projects don't need system references
 					continue;
@@ -156,17 +166,13 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 
 			if (!sdkStyle)
 				project.Add (NewElement ("Import").WithAttribute ("Project", @"$(MSBuildBinPath)\Microsoft.CSharp.targets"));
-
-			//Import Xamarin.Forms.targets that was copied to the test directory in [SetUp]
-			project.Add (NewElement ("Import").WithAttribute ("Project", Path.Combine (testDirectory, XamarinFormsTargets)));
-
 			return project;
 		}
 
 		XElement AddFile (string name, string buildAction, string contents)
 		{
-			var filePath = Path.Combine (tempDirectory, name.Replace ('\\', Path.DirectorySeparatorChar).Replace ('/', Path.DirectorySeparatorChar));
-			Directory.CreateDirectory (Path.GetDirectoryName (filePath));
+			var filePath = IOPath.Combine (tempDirectory, name.Replace ('\\', IOPath.DirectorySeparatorChar).Replace ('/', IOPath.DirectorySeparatorChar));
+			Directory.CreateDirectory (IOPath.GetDirectoryName (filePath));
 			File.WriteAllText (filePath, contents);
 			var itemGroup = NewElement ("ItemGroup");
 			itemGroup.Add (NewElement (buildAction).WithAttribute ("Include", name));
@@ -178,7 +184,7 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 			//On Windows we have to "find" MSBuild
 			if (Environment.OSVersion.Platform == PlatformID.Win32NT) {
 				foreach (var visualStudioInstance in MSBuildLocator.QueryVisualStudioInstances ().OrderByDescending (v => v.Version)) {
-					return Path.Combine (visualStudioInstance.MSBuildPath, "MSBuild.exe");
+					return IOPath.Combine (visualStudioInstance.MSBuildPath, "MSBuild.exe");
 				}
 			}
 
@@ -193,11 +199,22 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 			}
 		}
 
-		void Build (string projectFile, string target = "Build", string additionalArgs = "")
+		string Build (string projectFile, string target = "Build", string additionalArgs = "", bool shouldSucceed = true)
 		{
+			var builder = new StringBuilder();
+			void onData(object s, DataReceivedEventArgs e)
+			{
+				lock (builder)
+				if (e.Data != null)
+				{
+					builder.AppendLine(e.Data);
+					Console.WriteLine(e.Data);
+				}
+			};
+
 			var psi = new ProcessStartInfo {
 				FileName = FindMSBuild (),
-				Arguments = $"/v:minimal /nologo {projectFile} /t:{target} /bl {additionalArgs}",
+				Arguments = $"/v:normal /nologo {projectFile} /t:{target} /bl {additionalArgs}",
 				CreateNoWindow = true,
 				WindowStyle = ProcessWindowStyle.Hidden,
 				UseShellExecute = false,
@@ -206,14 +223,19 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 				WorkingDirectory = tempDirectory,
 			};
 			using (var p = new Process { StartInfo = psi }) {
-				p.ErrorDataReceived += (s, e) => Console.Error.WriteLine (e.Data);
-				p.OutputDataReceived += (s, e) => Console.WriteLine (e.Data);
+				p.ErrorDataReceived += onData;
+				p.OutputDataReceived += onData;
 
 				p.Start ();
 				p.BeginErrorReadLine ();
 				p.BeginOutputReadLine ();
 				p.WaitForExit ();
-				Assert.AreEqual (0, p.ExitCode, "MSBuild exited with {0}", p.ExitCode);
+				if (shouldSucceed)
+					Assert.AreEqual(0, p.ExitCode, "MSBuild exited with {0}", p.ExitCode);
+				else
+					Assert.AreNotEqual(0, p.ExitCode, "MSBuild exited with {0}", p.ExitCode);
+
+				return builder.ToString();
 			}
 		}
 
@@ -237,15 +259,49 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		{
 			var project = NewProject (sdkStyle);
 			project.Add (AddFile ("MainPage.xaml", "EmbeddedResource", Xaml.MainPage));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 			Build (projectFile);
 
-			AssertExists (Path.Combine (intermediateDirectory, "test.dll"), nonEmpty: true);
-			AssertExists (Path.Combine (intermediateDirectory, "MainPage.xaml.g.cs"), nonEmpty: true);
-			AssertExists (Path.Combine (intermediateDirectory, "Foo.css.g.cs"), nonEmpty: true);
-			AssertExists (Path.Combine (intermediateDirectory, "XamlC.stamp"));
+			AssertExists (IOPath.Combine (intermediateDirectory, "test.dll"), nonEmpty: true);
+			AssertExists (IOPath.Combine (intermediateDirectory, "MainPage.xaml.g.cs"), nonEmpty: true);
+			AssertExists (IOPath.Combine (intermediateDirectory, "Foo.css.g.cs"), nonEmpty: true);
+			AssertExists (IOPath.Combine (intermediateDirectory, "XamlC.stamp"));
+		}
+
+		// Tests the XFXamlCValidateOnly=True MSBuild property
+		[Test]
+		public void ValidateOnly([Values(false, true)] bool sdkStyle)
+		{
+			var project = NewProject(sdkStyle);
+			project.Add(AddFile("MainPage.xaml", "EmbeddedResource", Xaml.MainPage));
+			var projectFile = IOPath.Combine(tempDirectory, "test.csproj");
+			project.Save(projectFile);
+			RestoreIfNeeded(projectFile, sdkStyle);
+			Build(projectFile, additionalArgs: "/p:XFXamlCValidateOnly=True");
+
+			var testDll = IOPath.Combine(intermediateDirectory, "test.dll");
+			AssertExists(testDll, nonEmpty: true);
+			using (var assembly = AssemblyDefinition.ReadAssembly(testDll))
+			{
+				// XAML files should remain as EmbeddedResource
+				var resources = assembly.MainModule.Resources.OfType<EmbeddedResource>().Select(e => e.Name).ToArray();
+				CollectionAssert.Contains(resources, "test.MainPage.xaml");
+			}
+		}
+
+		[Test]
+		public void ValidateOnly_WithErrors([Values(false, true)] bool sdkStyle)
+		{
+			var project = NewProject(sdkStyle);
+			project.Add(AddFile("MainPage.xaml", "EmbeddedResource", Xaml.MainPage.Replace ("</ContentPage>", "<NotARealThing/></ContentPage>")));
+			var projectFile = IOPath.Combine(tempDirectory, "test.csproj");
+			project.Save(projectFile);
+			RestoreIfNeeded(projectFile, sdkStyle);
+
+			string log = Build(projectFile, additionalArgs: "/p:XFXamlCValidateOnly=True", shouldSucceed: false);
+			StringAssert.Contains("MainPage.xaml(7,6): XamlC error XFC0000: Cannot resolve type \"NotARealThing\".", log);
 		}
 
 		/// <summary>
@@ -256,14 +312,14 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		{
 			var project = NewProject (sdkStyle);
 			project.Add (AddFile ("MainPage.xaml", "EmbeddedResource", Xaml.MainPage));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 			Build (projectFile);
 
-			var mainPageXamlG = Path.Combine (intermediateDirectory, "MainPage.xaml.g.cs");
-			var fooCssG = Path.Combine (intermediateDirectory, "Foo.css.g.cs");
-			var xamlCStamp = Path.Combine (intermediateDirectory, "XamlC.stamp");
+			var mainPageXamlG = IOPath.Combine (intermediateDirectory, "MainPage.xaml.g.cs");
+			var fooCssG = IOPath.Combine (intermediateDirectory, "Foo.css.g.cs");
+			var xamlCStamp = IOPath.Combine (intermediateDirectory, "XamlC.stamp");
 			AssertExists (mainPageXamlG, nonEmpty: true);
 			AssertExists (fooCssG, nonEmpty: true);
 			AssertExists (xamlCStamp);
@@ -293,14 +349,14 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		{
 			var project = NewProject (sdkStyle);
 			project.Add (AddFile ("MainPage.xaml", "EmbeddedResource", Xaml.MainPage));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 			Build (projectFile);
 
-			var mainPageXamlG = Path.Combine (intermediateDirectory, "MainPage.xaml.g.cs");
-			var fooCssG = Path.Combine (intermediateDirectory, "Foo.css.g.cs");
-			var xamlCStamp = Path.Combine (intermediateDirectory, "XamlC.stamp");
+			var mainPageXamlG = IOPath.Combine (intermediateDirectory, "MainPage.xaml.g.cs");
+			var fooCssG = IOPath.Combine (intermediateDirectory, "Foo.css.g.cs");
+			var xamlCStamp = IOPath.Combine (intermediateDirectory, "XamlC.stamp");
 			AssertExists (mainPageXamlG, nonEmpty: true);
 			AssertExists (fooCssG, nonEmpty: true);
 			AssertExists (xamlCStamp);
@@ -315,9 +371,9 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		[Test]
 		public void LinkedFile ([Values (false, true)] bool sdkStyle)
 		{
-			var folder = Path.Combine (tempDirectory, "A", "B");
+			var folder = IOPath.Combine (tempDirectory, "A", "B");
 			Directory.CreateDirectory (folder);
-			File.WriteAllText (Path.Combine (folder, "MainPage.xaml"), Xaml.MainPage);
+			File.WriteAllText (IOPath.Combine (folder, "MainPage.xaml"), Xaml.MainPage);
 
 			var project = NewProject (sdkStyle);
 			var itemGroup = NewElement ("ItemGroup");
@@ -325,24 +381,24 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 			embeddedResource.Add (NewElement ("Link").WithValue (@"Pages\MainPage.xaml"));
 			itemGroup.Add (embeddedResource);
 			project.Add (itemGroup);
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 			Build (projectFile);
 
-			AssertExists (Path.Combine (intermediateDirectory, "test.dll"), nonEmpty: true);
-			AssertExists (Path.Combine (intermediateDirectory, "Pages", "MainPage.xaml.g.cs"), nonEmpty: true);
-			AssertExists (Path.Combine (intermediateDirectory, "XamlC.stamp"));
+			AssertExists (IOPath.Combine (intermediateDirectory, "test.dll"), nonEmpty: true);
+			AssertExists (IOPath.Combine (intermediateDirectory, "Pages", "MainPage.xaml.g.cs"), nonEmpty: true);
+			AssertExists (IOPath.Combine (intermediateDirectory, "XamlC.stamp"));
 		}
 
 		//https://github.com/dotnet/project-system/blob/master/docs/design-time-builds.md
 		//https://daveaglick.com/posts/running-a-design-time-build-with-msbuild-apis
 		[Test]
-		public void DesignTimeBuild ([Values (false, true)] bool sdkStyle)
+		public void DesignTimeBuild ([Values (false/*, true */)] bool sdkStyle)
 		{
 			var project = NewProject (sdkStyle);
 			project.Add (AddFile (@"Pages\MainPage.xaml", "EmbeddedResource", Xaml.MainPage));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 
@@ -350,10 +406,10 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 			var target = Environment.OSVersion.Platform == PlatformID.Win32NT ? "CompileDesignTime" : "Compile";
 			Build (projectFile, target, "/p:DesignTimeBuild=True /p:BuildingInsideVisualStudio=True /p:SkipCompilerExecution=True /p:ProvideCommandLineArgs=True");
 
-			var assembly = Path.Combine (intermediateDirectory, "test.dll");
-			var mainPageXamlG = Path.Combine (intermediateDirectory, "Pages", "MainPage.xaml.g.cs");
-			var fooCssG = Path.Combine (intermediateDirectory, "Foo.css.g.cs");
-			var xamlCStamp = Path.Combine (intermediateDirectory, "XamlC.stamp");
+			var assembly = IOPath.Combine (intermediateDirectory, "test.dll");
+			var mainPageXamlG = IOPath.Combine (intermediateDirectory, "Pages", "MainPage.xaml.g.cs");
+			var fooCssG = IOPath.Combine (intermediateDirectory, "Foo.css.g.cs");
+			var xamlCStamp = IOPath.Combine (intermediateDirectory, "XamlC.stamp");
 
 			//The assembly should not be compiled
 			AssertDoesNotExist (assembly);
@@ -383,14 +439,14 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		{
 			var project = NewProject (sdkStyle);
 			project.Add (AddFile (@"Pages\MainPage.xaml", "EmbeddedResource", Xaml.MainPage));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 			Build (projectFile, "UpdateDesignTimeXaml");
 
-			AssertExists (Path.Combine (intermediateDirectory, "Pages", "MainPage.xaml.g.cs"), nonEmpty: true);
-			AssertDoesNotExist (Path.Combine (intermediateDirectory, "Foo.css.g.cs"));
-			AssertDoesNotExist (Path.Combine (intermediateDirectory, "XamlC.stamp"));
+			AssertExists (IOPath.Combine (intermediateDirectory, "Pages", "MainPage.xaml.g.cs"), nonEmpty: true);
+			AssertDoesNotExist (IOPath.Combine (intermediateDirectory, "Foo.css.g.cs"));
+			AssertDoesNotExist (IOPath.Combine (intermediateDirectory, "XamlC.stamp"));
 		}
 
 		[Test]
@@ -398,15 +454,15 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		{
 			var project = NewProject (sdkStyle);
 			project.Add (AddFile ("MainPage.xaml", "EmbeddedResource", Xaml.MainPage));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 			Build (projectFile);
 
-			var mainPageXamlG = Path.Combine (intermediateDirectory, "MainPage.xaml.g.cs");
-			var customViewXamlG = Path.Combine (intermediateDirectory, "CustomView.xaml.g.cs");
-			var fooCssG = Path.Combine (intermediateDirectory, "Foo.css.g.cs");
-			var xamlCStamp = Path.Combine (intermediateDirectory, "XamlC.stamp");
+			var mainPageXamlG = IOPath.Combine (intermediateDirectory, "MainPage.xaml.g.cs");
+			var customViewXamlG = IOPath.Combine (intermediateDirectory, "CustomView.xaml.g.cs");
+			var fooCssG = IOPath.Combine (intermediateDirectory, "Foo.css.g.cs");
+			var xamlCStamp = IOPath.Combine (intermediateDirectory, "XamlC.stamp");
 			AssertExists (mainPageXamlG, nonEmpty: true);
 			AssertExists (xamlCStamp);
 
@@ -438,14 +494,14 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 			var project = NewProject (sdkStyle);
 			project.Add (AddFile ("MainPage.xaml", "EmbeddedResource", Xaml.MainPage));
 			project.Add (AddFile ("CustomView.xaml", "EmbeddedResource", Xaml.CustomView));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 			Build (projectFile);
 
-			var mainPageXamlG = Path.Combine (intermediateDirectory, "MainPage.xaml.g.cs");
-			var customViewXamlG = Path.Combine (intermediateDirectory, "CustomView.xaml.g.cs");
-			var xamlCStamp = Path.Combine (intermediateDirectory, "XamlC.stamp");
+			var mainPageXamlG = IOPath.Combine (intermediateDirectory, "MainPage.xaml.g.cs");
+			var customViewXamlG = IOPath.Combine (intermediateDirectory, "CustomView.xaml.g.cs");
+			var xamlCStamp = IOPath.Combine (intermediateDirectory, "XamlC.stamp");
 			AssertExists (mainPageXamlG, nonEmpty: true);
 			AssertExists (customViewXamlG, nonEmpty: true);
 			AssertExists (xamlCStamp);
@@ -476,25 +532,25 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		{
 			var project = NewProject (sdkStyle);
 			project.Add (AddFile ("MainPage.xaml", "EmbeddedResource", "<xml></xml>"));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 			Build (projectFile);
 
-			AssertExists (Path.Combine (intermediateDirectory, "test.dll"), nonEmpty: true);
-			AssertExists (Path.Combine (intermediateDirectory, "MainPage.xaml.g.cs"));
-			AssertExists (Path.Combine (intermediateDirectory, "XamlC.stamp"));
+			AssertExists (IOPath.Combine (intermediateDirectory, "test.dll"), nonEmpty: true);
+			AssertExists (IOPath.Combine (intermediateDirectory, "MainPage.xaml.g.cs"));
+			AssertExists (IOPath.Combine (intermediateDirectory, "XamlC.stamp"));
 		}
 
-		[Test, ExpectedException (typeof(AssertionException))]
-		public void InvalidXml ([Values (false, true)] bool sdkStyle)
+		[Test]
+		public void InvalidXml([Values(false, true)] bool sdkStyle)
 		{
-			var project = NewProject (sdkStyle);
-			project.Add (AddFile ("MainPage.xaml", "EmbeddedResource", "notxmlatall"));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
-			project.Save (projectFile);
-			RestoreIfNeeded (projectFile, sdkStyle);
-			Build (projectFile);
+			var project = NewProject(sdkStyle);
+			project.Add(AddFile("MainPage.xaml", "EmbeddedResource", "notxmlatall"));
+			var projectFile = IOPath.Combine(tempDirectory, "test.csproj");
+			project.Save(projectFile);
+			RestoreIfNeeded(projectFile, sdkStyle);
+			Assert.Throws<AssertionException>(() => Build(projectFile));
 		}
 
 		[Test]
@@ -502,14 +558,14 @@ namespace Xamarin.Forms.MSBuild.UnitTests
 		{
 			var project = NewProject (sdkStyle);
 			project.Add (AddFile ("MainPage.txt", "EmbeddedResource", "notxmlatall"));
-			var projectFile = Path.Combine (tempDirectory, "test.csproj");
+			var projectFile = IOPath.Combine (tempDirectory, "test.csproj");
 			project.Save (projectFile);
 			RestoreIfNeeded (projectFile, sdkStyle);
 			Build (projectFile);
 
-			AssertExists (Path.Combine (intermediateDirectory, "test.dll"), nonEmpty: true);
-			AssertDoesNotExist (Path.Combine (intermediateDirectory, "MainPage.txt.g.cs"));
-			AssertExists (Path.Combine (intermediateDirectory, "XamlC.stamp"));
+			AssertExists (IOPath.Combine (intermediateDirectory, "test.dll"), nonEmpty: true);
+			AssertDoesNotExist (IOPath.Combine (intermediateDirectory, "MainPage.txt.g.cs"));
+			AssertExists (IOPath.Combine (intermediateDirectory, "XamlC.stamp"));
 		}
 	}
 }

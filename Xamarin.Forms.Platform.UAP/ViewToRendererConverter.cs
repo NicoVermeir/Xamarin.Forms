@@ -1,7 +1,7 @@
 ﻿using System;
-using Windows.Foundation;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using WRect = Windows.Foundation.Rect; 
 
 namespace Xamarin.Forms.Platform.UWP
 {
@@ -37,12 +37,18 @@ namespace Xamarin.Forms.Platform.UWP
 
 			FrameworkElement FrameworkElement { get; }
 
-			internal void CleanUp() => _view?.Cleanup();
+			internal void CleanUp()
+			{
+				_view?.Cleanup();
+
+				if(_view != null)
+					_view.MeasureInvalidated -= OnMeasureInvalidated;
+			}
 
 			public WrapperControl(View view)
 			{
 				_view = view;
-				_view.MeasureInvalidated += (sender, args) => { InvalidateMeasure(); };
+				_view.MeasureInvalidated += OnMeasureInvalidated;
 
 				IVisualElementRenderer renderer = Platform.CreateRenderer(view);
 				Platform.SetRenderer(view, renderer);
@@ -64,6 +70,11 @@ namespace Xamarin.Forms.Platform.UWP
 				}
 			}
 
+			void OnMeasureInvalidated(object sender, EventArgs e)
+			{
+				InvalidateMeasure();
+			}
+
 			protected override Windows.Foundation.Size ArrangeOverride(Windows.Foundation.Size finalSize)
 			{
 				_view.IsInNativeLayout = true;
@@ -78,7 +89,7 @@ namespace Xamarin.Forms.Platform.UWP
 				else
 				{
 					Opacity = 1;
-					FrameworkElement?.Arrange(new Rect(_view.X, _view.Y, _view.Width, _view.Height));
+					FrameworkElement?.Arrange(new WRect(_view.X, _view.Y, _view.Width, _view.Height));
 				}
 				_view.IsInNativeLayout = false;
 

@@ -1,15 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Xamarin.Forms.Internals;
+using Xamarin.Forms.StyleSheets;
 
 namespace Xamarin.Forms
 {
@@ -28,12 +27,18 @@ namespace Xamarin.Forms
 				SetInheritedBindingContext(newHandlerBehavior, bindable.BindingContext);
 		}
 
+		public static readonly BindableProperty PresentationModeProperty = BindableProperty.CreateAttached("PresentationMode", typeof(PresentationMode), typeof(Shell), PresentationMode.Animated);
+
 		public static readonly BindableProperty FlyoutBehaviorProperty =
 			BindableProperty.CreateAttached("FlyoutBehavior", typeof(FlyoutBehavior), typeof(Shell), FlyoutBehavior.Flyout,
 				propertyChanged: OnFlyoutBehaviorChanged);
 
 		public static readonly BindableProperty NavBarIsVisibleProperty =
 			BindableProperty.CreateAttached("NavBarIsVisible", typeof(bool), typeof(Shell), true);
+
+		public static readonly BindableProperty NavBarHasShadowProperty =
+			BindableProperty.CreateAttached("NavBarHasShadow", typeof(bool), typeof(Shell), default(bool),
+				defaultValueCreator: (b) => Device.RuntimePlatform == Device.Android);
 
 		public static readonly BindableProperty SearchHandlerProperty =
 			BindableProperty.CreateAttached("SearchHandler", typeof(SearchHandler), typeof(Shell), null, BindingMode.OneTime,
@@ -53,14 +58,32 @@ namespace Xamarin.Forms
 		public static readonly BindableProperty TitleViewProperty =
 			BindableProperty.CreateAttached("TitleView", typeof(View), typeof(Shell), null, propertyChanged: OnTitleViewChanged);
 
+		public static readonly BindableProperty MenuItemTemplateProperty =
+			BindableProperty.CreateAttached(nameof(MenuItemTemplate), typeof(DataTemplate), typeof(Shell), null, BindingMode.OneTime);
+
+		public static DataTemplate GetMenuItemTemplate(BindableObject obj) => (DataTemplate)obj.GetValue(MenuItemTemplateProperty);
+		public static void SetMenuItemTemplate(BindableObject obj, DataTemplate menuItemTemplate) => obj.SetValue(MenuItemTemplateProperty, menuItemTemplate);
+
+		public static readonly BindableProperty ItemTemplateProperty =
+			BindableProperty.CreateAttached(nameof(ItemTemplate), typeof(DataTemplate), typeof(Shell), null, BindingMode.OneTime);
+
+		public static DataTemplate GetItemTemplate(BindableObject obj) => (DataTemplate)obj.GetValue(ItemTemplateProperty);
+		public static void SetItemTemplate(BindableObject obj, DataTemplate itemTemplate) => obj.SetValue(ItemTemplateProperty, itemTemplate);
+
 		public static BackButtonBehavior GetBackButtonBehavior(BindableObject obj) => (BackButtonBehavior)obj.GetValue(BackButtonBehaviorProperty);
 		public static void SetBackButtonBehavior(BindableObject obj, BackButtonBehavior behavior) => obj.SetValue(BackButtonBehaviorProperty, behavior);
+
+		public static PresentationMode GetPresentationMode(BindableObject obj) => (PresentationMode)obj.GetValue(PresentationModeProperty);
+		public static void SetPresentationMode(BindableObject obj, PresentationMode presentationMode) => obj.SetValue(PresentationModeProperty, presentationMode);
 
 		public static FlyoutBehavior GetFlyoutBehavior(BindableObject obj) => (FlyoutBehavior)obj.GetValue(FlyoutBehaviorProperty);
 		public static void SetFlyoutBehavior(BindableObject obj, FlyoutBehavior value) => obj.SetValue(FlyoutBehaviorProperty, value);
 
 		public static bool GetNavBarIsVisible(BindableObject obj) => (bool)obj.GetValue(NavBarIsVisibleProperty);
 		public static void SetNavBarIsVisible(BindableObject obj, bool value) => obj.SetValue(NavBarIsVisibleProperty, value);
+
+		public static bool GetNavBarHasShadow(BindableObject obj) => (bool)obj.GetValue(NavBarHasShadowProperty);
+		public static void SetNavBarHasShadow(BindableObject obj, bool value) => obj.SetValue(NavBarHasShadowProperty, value);
 
 		public static SearchHandler GetSearchHandler(BindableObject obj) => (SearchHandler)obj.GetValue(SearchHandlerProperty);
 		public static void SetSearchHandler(BindableObject obj, SearchHandler handler) => obj.SetValue(SearchHandlerProperty, handler);
@@ -83,77 +106,84 @@ namespace Xamarin.Forms
 			}
 		}
 
-		public static readonly BindableProperty ShellBackgroundColorProperty =
-			BindableProperty.CreateAttached("ShellBackgroundColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly new BindableProperty BackgroundColorProperty =
+			BindableProperty.CreateAttached("BackgroundColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static readonly BindableProperty ShellDisabledColorProperty =
-			BindableProperty.CreateAttached("ShellDisabledColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly BindableProperty DisabledColorProperty =
+			BindableProperty.CreateAttached("DisabledColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static readonly BindableProperty ShellForegroundColorProperty =
-			BindableProperty.CreateAttached("ShellForegroundColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly BindableProperty ForegroundColorProperty =
+			BindableProperty.CreateAttached("ForegroundColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static readonly BindableProperty ShellTabBarBackgroundColorProperty =
-			BindableProperty.CreateAttached("ShellTabBarBackgroundColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly BindableProperty TabBarBackgroundColorProperty =
+			BindableProperty.CreateAttached("TabBarBackgroundColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static readonly BindableProperty ShellTabBarDisabledColorProperty =
-			BindableProperty.CreateAttached("ShellTabBarDisabledColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly BindableProperty TabBarDisabledColorProperty =
+			BindableProperty.CreateAttached("TabBarDisabledColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static readonly BindableProperty ShellTabBarForegroundColorProperty =
-			BindableProperty.CreateAttached("ShellTabBarForegroundColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly BindableProperty TabBarForegroundColorProperty =
+			BindableProperty.CreateAttached("TabBarForegroundColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static readonly BindableProperty ShellTabBarTitleColorProperty =
-			BindableProperty.CreateAttached("ShellTabBarTitleColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly BindableProperty TabBarTitleColorProperty =
+			BindableProperty.CreateAttached("TabBarTitleColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static readonly BindableProperty ShellTabBarUnselectedColorProperty =
-			BindableProperty.CreateAttached("ShellTabBarUnselectedColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly BindableProperty TabBarUnselectedColorProperty =
+			BindableProperty.CreateAttached("TabBarUnselectedColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static readonly BindableProperty ShellTitleColorProperty =
-			BindableProperty.CreateAttached("ShellTitleColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly BindableProperty TitleColorProperty =
+			BindableProperty.CreateAttached("TitleColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static readonly BindableProperty ShellUnselectedColorProperty =
-			BindableProperty.CreateAttached("ShellUnselectedColor", typeof(Color), typeof(Shell), Color.Default,
-				propertyChanged: OnShellColorValueChanged);
+		public static readonly BindableProperty UnselectedColorProperty =
+			BindableProperty.CreateAttached("UnselectedColor", typeof(Color), typeof(Shell), Color.Default,
+				propertyChanged: OnColorValueChanged);
 
-		public static Color GetShellBackgroundColor(BindableObject obj) => (Color)obj.GetValue(ShellBackgroundColorProperty);
-		public static void SetShellBackgroundColor(BindableObject obj, Color value) => obj.SetValue(ShellBackgroundColorProperty, value);
+		//public static readonly BindableProperty FlyoutBackdropColorProperty =
+		//	BindableProperty.CreateAttached("FlyoutBackdropColor", typeof(Color), typeof(Shell), Color.Default,
+		//		propertyChanged: OnColorValueChanged);
 
-		public static Color GetShellDisabledColor(BindableObject obj) => (Color)obj.GetValue(ShellDisabledColorProperty);
-		public static void SetShellDisabledColor(BindableObject obj, Color value) => obj.SetValue(ShellDisabledColorProperty, value);
+		public static Color GetBackgroundColor(BindableObject obj) => (Color)obj.GetValue(BackgroundColorProperty);
+		public static void SetBackgroundColor(BindableObject obj, Color value) => obj.SetValue(BackgroundColorProperty, value);
 
-		public static Color GetShellForegroundColor(BindableObject obj) => (Color)obj.GetValue(ShellForegroundColorProperty);
-		public static void SetShellForegroundColor(BindableObject obj, Color value) => obj.SetValue(ShellForegroundColorProperty, value);
+		public static Color GetDisabledColor(BindableObject obj) => (Color)obj.GetValue(DisabledColorProperty);
+		public static void SetDisabledColor(BindableObject obj, Color value) => obj.SetValue(DisabledColorProperty, value);
 
-		public static Color GetShellTabBarBackgroundColor(BindableObject obj) => (Color)obj.GetValue(ShellTabBarBackgroundColorProperty);
-		public static void SetShellTabBarBackgroundColor(BindableObject obj, Color value) => obj.SetValue(ShellTabBarBackgroundColorProperty, value);
+		public static Color GetForegroundColor(BindableObject obj) => (Color)obj.GetValue(ForegroundColorProperty);
+		public static void SetForegroundColor(BindableObject obj, Color value) => obj.SetValue(ForegroundColorProperty, value);
 
-		public static Color GetShellTabBarDisabledColor(BindableObject obj) => (Color)obj.GetValue(ShellTabBarDisabledColorProperty);
-		public static void SetShellTabBarDisabledColor(BindableObject obj, Color value) => obj.SetValue(ShellTabBarDisabledColorProperty, value);
+		public static Color GetTabBarBackgroundColor(BindableObject obj) => (Color)obj.GetValue(TabBarBackgroundColorProperty);
+		public static void SetTabBarBackgroundColor(BindableObject obj, Color value) => obj.SetValue(TabBarBackgroundColorProperty, value);
 
-		public static Color GetShellTabBarForegroundColor(BindableObject obj) => (Color)obj.GetValue(ShellTabBarForegroundColorProperty);
-		public static void SetShellTabBarForegroundColor(BindableObject obj, Color value) => obj.SetValue(ShellTabBarForegroundColorProperty, value);
+		public static Color GetTabBarDisabledColor(BindableObject obj) => (Color)obj.GetValue(TabBarDisabledColorProperty);
+		public static void SetTabBarDisabledColor(BindableObject obj, Color value) => obj.SetValue(TabBarDisabledColorProperty, value);
 
-		public static Color GetShellTabBarTitleColor(BindableObject obj) => (Color)obj.GetValue(ShellTabBarTitleColorProperty);
-		public static void SetShellTabBarTitleColor(BindableObject obj, Color value) => obj.SetValue(ShellTabBarTitleColorProperty, value);
+		public static Color GetTabBarForegroundColor(BindableObject obj) => (Color)obj.GetValue(TabBarForegroundColorProperty);
+		public static void SetTabBarForegroundColor(BindableObject obj, Color value) => obj.SetValue(TabBarForegroundColorProperty, value);
 
-		public static Color GetShellTabBarUnselectedColor(BindableObject obj) => (Color)obj.GetValue(ShellTabBarUnselectedColorProperty);
-		public static void SetShellTabBarUnselectedColor(BindableObject obj, Color value) => obj.SetValue(ShellTabBarUnselectedColorProperty, value);
+		public static Color GetTabBarTitleColor(BindableObject obj) => (Color)obj.GetValue(TabBarTitleColorProperty);
+		public static void SetTabBarTitleColor(BindableObject obj, Color value) => obj.SetValue(TabBarTitleColorProperty, value);
 
-		public static Color GetShellTitleColor(BindableObject obj) => (Color)obj.GetValue(ShellTitleColorProperty);
-		public static void SetShellTitleColor(BindableObject obj, Color value) => obj.SetValue(ShellTitleColorProperty, value);
+		public static Color GetTabBarUnselectedColor(BindableObject obj) => (Color)obj.GetValue(TabBarUnselectedColorProperty);
+		public static void SetTabBarUnselectedColor(BindableObject obj, Color value) => obj.SetValue(TabBarUnselectedColorProperty, value);
 
-		public static Color GetShellUnselectedColor(BindableObject obj) => (Color)obj.GetValue(ShellUnselectedColorProperty);
-		public static void SetShellUnselectedColor(BindableObject obj, Color value) => obj.SetValue(ShellUnselectedColorProperty, value);
+		public static Color GetTitleColor(BindableObject obj) => (Color)obj.GetValue(TitleColorProperty);
+		public static void SetTitleColor(BindableObject obj, Color value) => obj.SetValue(TitleColorProperty, value);
 
-		static void OnShellColorValueChanged(BindableObject bindable, object oldValue, object newValue)
+		public static Color GetUnselectedColor(BindableObject obj) => (Color)obj.GetValue(UnselectedColorProperty);
+		public static void SetUnselectedColor(BindableObject obj, Color value) => obj.SetValue(UnselectedColorProperty, value);
+
+		//public static Color GetFlyoutBackdropColor(BindableObject obj) => (Color)obj.GetValue(FlyoutBackdropColorProperty);
+		//public static void SetFlyoutBackdropColor(BindableObject obj, Color value) => obj.SetValue(FlyoutBackdropColorProperty, value);
+
+		static void OnColorValueChanged(BindableObject bindable, object oldValue, object newValue)
 		{
 			var item = (Element)bindable;
 			var source = item;
@@ -175,11 +205,53 @@ namespace Xamarin.Forms
 		static readonly BindablePropertyKey ItemsPropertyKey = BindableProperty.CreateReadOnly(nameof(Items), typeof(ShellItemCollection), typeof(Shell), null,
 				defaultValueCreator: bo => new ShellItemCollection { Inner = new ElementCollection<ShellItem>(((Shell)bo).InternalChildren) });
 
-		static readonly BindablePropertyKey MenuItemsPropertyKey =
-			BindableProperty.CreateReadOnly(nameof(MenuItems), typeof(MenuItemCollection), typeof(Shell), null, defaultValueCreator: bo => new MenuItemCollection());
-
 		List<(IAppearanceObserver Observer, Element Pivot)> _appearanceObservers = new List<(IAppearanceObserver Observer, Element Pivot)>();
 		List<IFlyoutBehaviorObserver> _flyoutBehaviorObservers = new List<IFlyoutBehaviorObserver>();
+
+		DataTemplate IShellController.GetFlyoutItemDataTemplate(BindableObject bo)
+		{
+			BindableProperty bp = null;
+			string textBinding; 
+			string iconBinding;
+			IStyleSelectable styleClassSource = null;
+
+			if (bo is IMenuItemController)
+			{
+				bp = MenuItemTemplateProperty;
+
+				if (bo is MenuItem mi && mi.Parent != null && mi.Parent.IsSet(bp))
+					bo = mi.Parent;
+				else if (bo is MenuShellItem msi && msi.MenuItem != null && msi.MenuItem.IsSet(bp))
+					bo = msi.MenuItem;
+
+				if (bo is MenuItem myStyle)
+					styleClassSource = myStyle;
+				else if (bo is MenuShellItem msiStyle)
+					styleClassSource = msiStyle.MenuItem;
+
+				textBinding = "Text";
+				iconBinding = "Icon";
+			}
+			else
+			{
+				styleClassSource = bo as IStyleSelectable;
+				bp = ItemTemplateProperty;
+				textBinding = "Title";
+				iconBinding = "FlyoutIcon";
+			}
+
+			if (bo.IsSet(bp))
+			{
+				return (DataTemplate)bo.GetValue(bp);
+			}
+
+			if(IsSet(bp))
+			{
+				return (DataTemplate)GetValue(bp);
+			}
+
+			return BaseShellItem.CreateDefaultFlyoutItemCell(styleClassSource, textBinding, iconBinding);
+		}
 
 		event EventHandler IShellController.StructureChanged
 		{
@@ -191,16 +263,22 @@ namespace Xamarin.Forms
 
 		View IShellController.FlyoutHeader => FlyoutHeaderView;
 
+		IShellController ShellController => this;
+
 		void IShellController.AddAppearanceObserver(IAppearanceObserver observer, Element pivot)
 		{
 			_appearanceObservers.Add((observer, pivot));
-			observer.OnAppearanceChanged(GetShellAppearanceForPivot(pivot));
+			observer.OnAppearanceChanged(GetAppearanceForPivot(pivot));
 		}
 
 		void IShellController.AddFlyoutBehaviorObserver(IFlyoutBehaviorObserver observer)
 		{
 			_flyoutBehaviorObservers.Add(observer);
-			observer.OnFlyoutBehaviorChanged(GetEffectiveFlyoutBehavior());
+
+			// We need to wait until the visible page has been created before we try to calculate
+			// the flyout behavior
+			if (GetVisiblePage() != null)
+				observer.OnFlyoutBehaviorChanged(GetEffectiveFlyoutBehavior());
 		}
 
 		void IShellController.AppearanceChanged(Element source, bool appearanceSet)
@@ -242,16 +320,17 @@ namespace Xamarin.Forms
 				{
 					if (leaf == target)
 					{
-						observer.OnAppearanceChanged(GetShellAppearanceForPivot(pivot));
+						observer.OnAppearanceChanged(GetAppearanceForPivot(pivot));
 						break;
 					}
+
 					leaf = leaf.Parent;
 				}
 			}
 		}
 
 		ShellNavigationState IShellController.GetNavigationState(ShellItem shellItem, ShellSection shellSection, ShellContent shellContent, bool includeStack)
-			=> GetNavigationState(shellItem, shellSection, shellContent, includeStack ? shellSection.Stack.ToList() : null);
+			=> GetNavigationState(shellItem, shellSection, shellContent, includeStack ? shellSection.Stack.ToList() : null, includeStack ? shellSection.Navigation.ModalStack.ToList() : null);
 
 		async void IShellController.OnFlyoutItemSelected(Element element)
 		{
@@ -292,17 +371,34 @@ namespace Xamarin.Forms
 			shellSection = shellSection ?? shellItem.CurrentItem;
 			shellContent = shellContent ?? shellSection?.CurrentItem;
 
-			var state = GetNavigationState(shellItem, shellSection, shellContent, null);
+			var state = GetNavigationState(shellItem, shellSection, shellContent, null, null);
 
-			if (FlyoutIsPresented && FlyoutBehavior == FlyoutBehavior.Flyout)
+			if (FlyoutIsPresented && GetEffectiveFlyoutBehavior() != FlyoutBehavior.Locked)
 				SetValueFromRenderer(FlyoutIsPresentedProperty, false);
 
-			await GoToAsync(state).ConfigureAwait(false);
+			if (shellSection == null)
+				shellItem.PropertyChanged += OnShellItemPropertyChanged;
+			else if (shellContent == null)
+				shellSection.PropertyChanged += OnShellItemPropertyChanged;
+			else
+				await GoToAsync(state).ConfigureAwait(false);
+		}
+
+		void OnShellItemPropertyChanged(object sender, PropertyChangedEventArgs e)
+		{
+			if (e.PropertyName == CurrentItemProperty.PropertyName)
+			{
+				(sender as BindableObject).PropertyChanged -= OnShellItemPropertyChanged;
+				if (sender is ShellItem item)
+					((IShellController)this).OnFlyoutItemSelected(item);
+				else if (sender is ShellSection section)
+					((IShellController)this).OnFlyoutItemSelected(section.Parent);
+			}
 		}
 
 		bool IShellController.ProposeNavigation(ShellNavigationSource source, ShellItem shellItem, ShellSection shellSection, ShellContent shellContent, IReadOnlyList<Page> stack, bool canCancel)
 		{
-			var proposedState = GetNavigationState(shellItem, shellSection, shellContent, stack);
+			var proposedState = GetNavigationState(shellItem, shellSection, shellContent, stack, shellSection.Navigation.ModalStack);
 			return ProposeNavigation(source, proposedState, canCancel);
 		}
 
@@ -329,11 +425,20 @@ namespace Xamarin.Forms
 			var shellSection = shellItem?.CurrentItem;
 			var shellContent = shellSection?.CurrentItem;
 			var stack = shellSection?.Stack;
-			var result = GetNavigationState(shellItem, shellSection, shellContent, stack);
+			var modalStack = shellSection?.Navigation?.ModalStack;
+			var result = GetNavigationState(shellItem, shellSection, shellContent, stack, modalStack);
 
 			SetValueFromRenderer(CurrentStatePropertyKey, result);
 
-			OnNavigated(new ShellNavigatedEventArgs(oldState, CurrentState, source));
+			ProcessNavigated(new ShellNavigatedEventArgs(oldState, CurrentState, source));
+		}
+		ReadOnlyCollection<ShellItem> IShellController.GetItems() =>
+			new ReadOnlyCollection<ShellItem>(((ShellItemCollection)Items).VisibleItemsReadOnly.ToList());
+
+		event NotifyCollectionChangedEventHandler IShellController.ItemsCollectionChanged
+		{
+			add { ((ShellItemCollection)Items).VisibleItemsChanged += value; }
+			remove { ((ShellItemCollection)Items).VisibleItemsChanged -= value; }
 		}
 
 		public static Shell Current => Application.Current?.MainPage as Shell;
@@ -368,15 +473,20 @@ namespace Xamarin.Forms
 			return routes;
 		}
 
-		public Task GoToAsync(ShellNavigationState state, bool animate = true)
+		public Task GoToAsync(ShellNavigationState state)
+		{
+			return GoToAsync(state, null, false);
+		}
+
+		public Task GoToAsync(ShellNavigationState state, bool animate)
 		{
 			return GoToAsync(state, animate, false);
 		}
 
-		internal async Task GoToAsync(ShellNavigationState state, bool animate, bool enableRelativeShellRoutes)
+		internal async Task GoToAsync(ShellNavigationState state, bool? animate, bool enableRelativeShellRoutes)
 		{
 			// FIXME: This should not be none, we need to compute the delta and set flags correctly
-			var accept = ProposeNavigation(ShellNavigationSource.Unknown, state, true);
+			var accept = ProposeNavigation(ShellNavigationSource.Unknown, state, this.CurrentState != null);
 			if (!accept)
 				return;
 
@@ -386,73 +496,103 @@ namespace Xamarin.Forms
 			var uri = navigationRequest.Request.FullUri;
 			var queryString = navigationRequest.Query;
 			var queryData = ParseQueryString(queryString);
-			var path = uri.AbsolutePath;
-
-			path = path.TrimEnd('/');
-
-			var parts = path.Substring(1).Split('/').ToList();
-
-			if (parts.Count < 2)
-				throw new InvalidOperationException("Path must be at least 2 items long in Shell navigation");
-
-			var shellRoute = parts[0];
-
-			var expectedShellRoute = Routing.GetRoute(this) ?? string.Empty;
-			if (expectedShellRoute != shellRoute)
-				throw new NotImplementedException();
-			else
-				parts.RemoveAt(0);
 
 			ApplyQueryAttributes(this, queryData, false);
 
 			var shellItem = navigationRequest.Request.Item;
+			var shellSection = navigationRequest.Request.Section;
+			var currentShellSection = CurrentItem?.CurrentItem;
+			var nextActiveSection = shellSection ?? shellItem?.CurrentItem;
+
+			ShellContent shellContent = navigationRequest.Request.Content;
+			bool modalStackPreBuilt = false;
+
+			// If we're replacing the whole stack and there are global routes then build the navigation stack before setting the shell section visible
+			if (navigationRequest.Request.GlobalRoutes.Count > 0 && nextActiveSection != null && navigationRequest.StackRequest == NavigationRequest.WhatToDoWithTheStack.ReplaceIt)
+			{
+				modalStackPreBuilt = true;
+				await nextActiveSection.GoToAsync(navigationRequest, queryData, false);
+			}
+
 			if (shellItem != null)
 			{
 				ApplyQueryAttributes(shellItem, queryData, navigationRequest.Request.Section == null);
+				bool navigatedToNewShellElement = false;
+
+				if (shellSection != null && shellContent != null)
+				{
+					Shell.ApplyQueryAttributes(shellContent, queryData, navigationRequest.Request.GlobalRoutes.Count == 0);
+					if (shellSection.CurrentItem != shellContent)
+					{
+						shellSection.SetValueFromRenderer(ShellSection.CurrentItemProperty, shellContent);
+						navigatedToNewShellElement = true;
+					}
+				}
+
+				if (shellSection != null)
+				{
+					Shell.ApplyQueryAttributes(shellSection, queryData, navigationRequest.Request.Content == null);
+					if (shellItem.CurrentItem != shellSection)
+					{
+						shellItem.SetValueFromRenderer(ShellItem.CurrentItemProperty, shellSection);
+						navigatedToNewShellElement = true;
+					}
+				}
 
 				if (CurrentItem != shellItem)
+				{
 					SetValueFromRenderer(CurrentItemProperty, shellItem);
+					navigatedToNewShellElement = true;
+				}
 
-				parts.RemoveAt(0);
+				if (!modalStackPreBuilt && currentShellSection?.Navigation.ModalStack.Count > 0)
+				{
+					// - navigating to new shell element so just pop everything
+					// - or route contains no global route requests
+					if (navigatedToNewShellElement || navigationRequest.Request.GlobalRoutes.Count == 0)
+					{
+						await currentShellSection.PopModalStackToPage(null, animate);
+					}
+				}
 
-				if (parts.Count > 0)
-					await shellItem.GoToPart(navigationRequest, queryData);
+				if (navigationRequest.Request.GlobalRoutes.Count > 0 && navigationRequest.StackRequest != NavigationRequest.WhatToDoWithTheStack.ReplaceIt)
+				{
+					// TODO get rid of this hack and fix so if there's a stack the current page doesn't display
+					await Device.InvokeOnMainThreadAsync(() =>
+					{
+						return CurrentItem.CurrentItem.GoToAsync(navigationRequest, queryData, animate);
+					});
+				}
+				else if(navigationRequest.Request.GlobalRoutes.Count == 0 &&
+					navigationRequest.StackRequest == NavigationRequest.WhatToDoWithTheStack.ReplaceIt &&
+					currentShellSection?.Navigation?.NavigationStack?.Count > 1)
+				{
+					// TODO get rid of this hack and fix so if there's a stack the current page doesn't display
+					await Device.InvokeOnMainThreadAsync(() =>
+					{
+						return CurrentItem.CurrentItem.GoToAsync(navigationRequest, queryData, animate);
+					});
+				}
 			}
 			else
 			{
 				await CurrentItem.CurrentItem.GoToAsync(navigationRequest, queryData, animate);
 			}
-			
-			//if (Routing.CompareWithRegisteredRoutes(shellItemRoute))
-			//{
-			//	var shellItem = ShellItem.GetShellItemFromRouteName(shellItemRoute);
-
-			//	ApplyQueryAttributes(shellItem, queryData, parts.Count == 1);
-
-			//	if (CurrentItem != shellItem)
-			//		SetValueFromRenderer(CurrentItemProperty, shellItem);
-
-			//	if (parts.Count > 0)
-			//		await ((IShellItemController)shellItem).GoToPart(parts, queryData);
-			//}
 
 			_accumulateNavigatedEvents = false;
 
 			// this can be null in the event that no navigation actually took place!
 			if (_accumulatedEvent != null)
-				OnNavigated(_accumulatedEvent);
+				ProcessNavigated(_accumulatedEvent);
 		}
 
 		internal static void ApplyQueryAttributes(Element element, IDictionary<string, string> query, bool isLastItem)
 		{
-			if (query.Count == 0)
-				return;
-
 			string prefix = "";
 			if (!isLastItem)
 			{
 				var route = Routing.GetRoute(element);
-				if (string.IsNullOrEmpty(route) || route.StartsWith(Routing.ImplicitPrefix, StringComparison.Ordinal))
+				if (string.IsNullOrEmpty(route) || Routing.IsImplicit(route))
 					return;
 				prefix = route + ".";
 			}
@@ -460,9 +600,9 @@ namespace Xamarin.Forms
 			//if the lastItem is implicitly wrapped, get the actual ShellContent
 			if (isLastItem)
 			{
-				if (element is ShellItem shellitem && shellitem.Items.FirstOrDefault() is ShellSection section)
+				if (element is IShellItemController shellitem && shellitem.GetItems().FirstOrDefault() is ShellSection section)
 					element = section;
-				if (element is ShellSection shellsection && shellsection.Items.FirstOrDefault() is ShellContent content)
+				if (element is IShellSectionController shellsection && shellsection.GetItems().FirstOrDefault() is ShellContent content)
 					element = content;
 				if (element is ShellContent shellcontent && shellcontent.Content is Element e)
 					element = e;
@@ -483,36 +623,32 @@ namespace Xamarin.Forms
 				filteredQuery.Add(key, q.Value);
 			}
 
-			if (baseShellItem != null)
+			if (baseShellItem is ShellContent)
 				baseShellItem.ApplyQueryAttributes(filteredQuery);
 			else if (isLastItem)
-				ShellContent.ApplyQueryAttributes(element, query);
+				element.SetValue(ShellContent.QueryAttributesProperty, query);
 		}
 
-		ShellNavigationState GetNavigationState(ShellItem shellItem, ShellSection shellSection, ShellContent shellContent, IReadOnlyList<Page> sectionStack)
+		ShellNavigationState GetNavigationState(ShellItem shellItem, ShellSection shellSection, ShellContent shellContent, IReadOnlyList<Page> sectionStack, IReadOnlyList<Page> modalStack)
 		{
-			StringBuilder stateBuilder = new StringBuilder($"{RouteScheme}://{RouteHost}/{Route}/");
-			Dictionary<string, string> queryData = new Dictionary<string, string>();
+			List<string> routeStack = new List<string>();
 
 			bool stackAtRoot = sectionStack == null || sectionStack.Count <= 1;
 
 			if (shellItem != null)
 			{
 				var shellItemRoute = shellItem.Route;
-				stateBuilder.Append(shellItemRoute);
-				stateBuilder.Append("/");
+				routeStack.Add(shellItemRoute);
 
 				if (shellSection != null)
 				{
 					var shellSectionRoute = shellSection.Route;
-					stateBuilder.Append(shellSectionRoute);
-					stateBuilder.Append("/");
+					routeStack.Add(shellSectionRoute);
 
 					if (shellContent != null)
 					{
 						var shellContentRoute = shellContent.Route;
-						stateBuilder.Append(shellContentRoute);
-						stateBuilder.Append("/");
+						routeStack.Add(shellContentRoute);
 					}
 
 					if (!stackAtRoot)
@@ -520,15 +656,63 @@ namespace Xamarin.Forms
 						for (int i = 1; i < sectionStack.Count; i++)
 						{
 							var page = sectionStack[i];
-							stateBuilder.Append(Routing.GetRoute(page));
-							if (i < sectionStack.Count - 1)
-								stateBuilder.Append("/");
+							routeStack.AddRange(CollapsePath(Routing.GetRoute(page), routeStack));
+						}
+					}
+
+					if (modalStack != null && modalStack.Count > 0)
+					{
+						for (int i = 0; i < modalStack.Count; i++)
+						{
+							var topPage = modalStack[i];
+
+							routeStack.AddRange(CollapsePath(Routing.GetRoute(topPage), routeStack));
+
+							for (int j = 1; j < topPage.Navigation.NavigationStack.Count; j++)
+							{
+								routeStack.AddRange(CollapsePath(Routing.GetRoute(topPage.Navigation.NavigationStack[j]), routeStack));
+							}
 						}
 					}
 				}
 			}
 
-			return stateBuilder.ToString();
+			if(routeStack.Count > 0)
+				routeStack.Insert(0, "/");
+
+			return String.Join("/", routeStack);
+
+
+			List<string> CollapsePath(string myRoute, List<string> currentRouteStack)
+			{
+				for (var i = currentRouteStack.Count - 1; i >= 0; i--)
+				{
+					var route = currentRouteStack[i];
+					if (Routing.IsImplicit(route) || Routing.IsDefault(route))
+						currentRouteStack.RemoveAt(i);
+				}
+
+				var paths = myRoute.Split('/').ToList();
+
+				// collapse similar leaves
+				int walkBackCurrentStackIndex = currentRouteStack.Count - (paths.Count - 1);
+
+				while(paths.Count > 1 && walkBackCurrentStackIndex >= 0)
+				{
+					if (paths[0] == currentRouteStack[walkBackCurrentStackIndex])
+					{
+						paths.RemoveAt(0);
+					}
+					else
+					{
+						break;
+					}
+
+					walkBackCurrentStackIndex++;
+				}
+
+				return paths;
+			}
 		}
 
 		public static readonly BindableProperty CurrentItemProperty =
@@ -538,6 +722,12 @@ namespace Xamarin.Forms
 
 		public static readonly BindableProperty CurrentStateProperty = CurrentStatePropertyKey.BindableProperty;
 
+		public static readonly BindableProperty FlyoutBackgroundImageProperty =
+			BindableProperty.Create(nameof(FlyoutBackgroundImage), typeof(ImageSource), typeof(Shell), default(ImageSource), BindingMode.OneTime);
+
+		public static readonly BindableProperty FlyoutBackgroundImageAspectProperty =
+			BindableProperty.Create(nameof(FlyoutBackgroundImageAspect), typeof(Aspect), typeof(Shell), default(Aspect), BindingMode.OneTime);
+
 		public static readonly BindableProperty FlyoutBackgroundColorProperty =
 			BindableProperty.Create(nameof(FlyoutBackgroundColor), typeof(Color), typeof(Shell), Color.Default, BindingMode.OneTime);
 
@@ -546,53 +736,93 @@ namespace Xamarin.Forms
 
 		public static readonly BindableProperty FlyoutHeaderProperty =
 			BindableProperty.Create(nameof(FlyoutHeader), typeof(object), typeof(Shell), null, BindingMode.OneTime,
-				propertyChanged: OnFlyoutHeaderChanged);
+				propertyChanging: OnFlyoutHeaderChanging);
 
 		public static readonly BindableProperty FlyoutHeaderTemplateProperty =
 			BindableProperty.Create(nameof(FlyoutHeaderTemplate), typeof(DataTemplate), typeof(Shell), null, BindingMode.OneTime,
-				propertyChanged: OnFlyoutHeaderTemplateChanged);
+				propertyChanging: OnFlyoutHeaderTemplateChanging);
 
 		public static readonly BindableProperty FlyoutIsPresentedProperty =
 			BindableProperty.Create(nameof(FlyoutIsPresented), typeof(bool), typeof(Shell), false, BindingMode.TwoWay);
 
 		public static readonly BindableProperty ItemsProperty = ItemsPropertyKey.BindableProperty;
 
-		public static readonly BindableProperty ItemTemplateProperty =
-			BindableProperty.Create(nameof(ItemTemplate), typeof(DataTemplate), typeof(Shell), null, BindingMode.OneTime);
-
-		public static readonly BindableProperty MenuItemsProperty = MenuItemsPropertyKey.BindableProperty;
-
-		public static readonly BindableProperty MenuItemTemplateProperty =
-			BindableProperty.Create(nameof(MenuItemTemplate), typeof(DataTemplate), typeof(Shell), null, BindingMode.OneTime);
-
 		public static readonly BindableProperty FlyoutIconProperty =
 			BindableProperty.Create(nameof(FlyoutIcon), typeof(ImageSource), typeof(Shell), null);
+
+		public static readonly BindableProperty FlyoutVerticalScrollModeProperty =
+			BindableProperty.Create(nameof(FlyoutVerticalScrollMode), typeof(ScrollMode), typeof(Shell), ScrollMode.Auto);
 
 		ShellNavigatedEventArgs _accumulatedEvent;
 		bool _accumulateNavigatedEvents;
 		View _flyoutHeaderView;
-		bool _checkExperimentalFlag = true;
 
-		public Shell() : this(true)
-		{
-		}
-
-		internal Shell(bool checkFlag)
+		public Shell()
 		{
 			Navigation = new NavigationImpl(this);
-			_checkExperimentalFlag = checkFlag;
-			VerifyShellFlagEnabled(constructorHint: nameof(Shell));
-			((INotifyCollectionChanged)Items).CollectionChanged += (s, e) => SendStructureChanged();
 			Route = Routing.GenerateImplicitRoute("shell");
+			Initialize();
 		}
 
-		internal const string ShellExperimental = ExperimentalFlags.ShellExperimental;
-
-		[EditorBrowsable(EditorBrowsableState.Never)]
-		internal void VerifyShellFlagEnabled(string constructorHint = null, [CallerMemberName] string memberName = "")
+		void Initialize()
 		{
-			if (_checkExperimentalFlag)
-				ExperimentalFlags.VerifyFlagEnabled("Shell", ShellExperimental, constructorHint, memberName);
+			if (CurrentItem != null)
+				SetCurrentItem();
+
+			((ShellElementCollection)Items).VisibleItemsChangedInternal += (s, e) =>
+			{
+				SetCurrentItem();
+				SendStructureChanged();
+			};
+
+			async void SetCurrentItem()
+			{
+				var shellItems = ShellController.GetItems();
+
+				if (CurrentItem != null && shellItems.Contains(CurrentItem))
+					return;
+
+				ShellItem shellItem = null;
+
+				// If shell item has been removed try to renavigate to current location
+				// Just in case the item was replaced. This is mainly relevant for hot reload
+				if (CurrentItem != null)
+				{
+					try
+					{
+						var location = CurrentState.Location;
+						if (ShellUriHandler.GetNavigationRequest(this, ((ShellNavigationState)location).FullLocation, false) != null)
+							await GoToAsync(location, false);
+
+						return;
+					}
+					catch (Exception exc)
+					{
+						Log.Warning(nameof(Shell), $"If you're using hot reload add a route to everything in your shell file:  {exc}");
+					}
+				}
+
+				if (shellItem == null)
+				{
+					foreach (var item in shellItems)
+					{
+						if (item is ShellItem && ValidDefaultShellItem(item))
+						{
+							shellItem = item;
+							break;
+						}
+					}
+				}
+
+				if (shellItem != null)
+					ShellController.OnFlyoutItemSelected(shellItem);
+			}
+		}
+
+		public ScrollMode FlyoutVerticalScrollMode
+		{
+			get => (ScrollMode)GetValue(FlyoutVerticalScrollModeProperty);
+			set => SetValue(FlyoutVerticalScrollModeProperty, value);
 		}
 
 		public event EventHandler<ShellNavigatedEventArgs> Navigated;
@@ -611,13 +841,35 @@ namespace Xamarin.Forms
 			set => SetValue(CurrentItemProperty, value);
 		}
 
+		internal ShellContent CurrentContent => CurrentItem?.CurrentItem?.CurrentItem;
+		internal ShellSection CurrentSection => CurrentItem?.CurrentItem;
+
 		public ShellNavigationState CurrentState => (ShellNavigationState)GetValue(CurrentStateProperty);
+
+		[TypeConverter(typeof(ImageSourceConverter))]
+		public ImageSource FlyoutBackgroundImage
+		{
+			get => (ImageSource)GetValue(FlyoutBackgroundImageProperty);
+			set => SetValue(FlyoutBackgroundImageProperty, value);
+		}
+
+		public Aspect FlyoutBackgroundImageAspect
+		{
+			get => (Aspect)GetValue(FlyoutBackgroundImageAspectProperty);
+			set => SetValue(FlyoutBackgroundImageAspectProperty, value);
+		}
 
 		public Color FlyoutBackgroundColor
 		{
 			get => (Color)GetValue(FlyoutBackgroundColorProperty);
 			set => SetValue(FlyoutBackgroundColorProperty, value);
 		}
+
+		//public Color FlyoutBackdropColor
+		//{
+		//	get => (Color)GetValue(FlyoutBackdropColorProperty);
+		//	set => SetValue(FlyoutBackdropColorProperty, value);
+		//}
 
 		public FlyoutBehavior FlyoutBehavior
 		{
@@ -649,32 +901,29 @@ namespace Xamarin.Forms
 			set => SetValue(FlyoutIsPresentedProperty, value);
 		}
 
-		public ShellItemCollection Items => (ShellItemCollection)GetValue(ItemsProperty);
-		public ShellItemCollection Flyout => Items;
+		public IList<ShellItem> Items => (IList<ShellItem>)GetValue(ItemsProperty);
 
 		public DataTemplate ItemTemplate
 		{
-			get => (DataTemplate)GetValue(ItemTemplateProperty);
-			set => SetValue(ItemTemplateProperty, value);
+			get => GetItemTemplate(this);
+			set => SetItemTemplate(this, value);
 		}
-
-		public MenuItemCollection MenuItems => (MenuItemCollection)GetValue(MenuItemsProperty);
 
 		public DataTemplate MenuItemTemplate
 		{
-			get => (DataTemplate)GetValue(MenuItemTemplateProperty);
-			set => SetValue(MenuItemTemplateProperty, value);
+			get => GetMenuItemTemplate(this);
+			set => SetMenuItemTemplate(this, value);
 		}
 
-		public string Route
+		internal string Route
 		{
 			get => Routing.GetRoute(this);
 			set => Routing.SetRoute(this, value);
 		}
 
-		public string RouteHost { get; set; }
+		internal string RouteHost { get; set; } = "shell";
 
-		public string RouteScheme { get; set; } = "app";
+		internal string RouteScheme { get; set; } = "app";
 
 		View FlyoutHeaderView
 		{
@@ -723,13 +972,13 @@ namespace Xamarin.Forms
 				}
 			}
 
-			foreach (var shellItem in Items)
+			foreach (var shellItem in ShellController.GetItems())
 			{
 				if (shellItem.FlyoutDisplayOptions == FlyoutDisplayOptions.AsMultipleItems)
 				{
 					IncrementGroup();
 
-					foreach (var shellSection in shellItem.Items)
+					foreach (var shellSection in (shellItem as IShellItemController).GetItems())
 					{
 						if (shellSection.FlyoutDisplayOptions == FlyoutDisplayOptions.AsMultipleItems)
 						{
@@ -747,10 +996,11 @@ namespace Xamarin.Forms
 						}
 						else
 						{
-							currentGroup.Add(shellSection);
+							if (!(shellSection.Parent is TabBar))
+								currentGroup.Add(shellSection);
 
 							// If we have only a single child we will also show the items menu items
-							if (shellSection.Items.Count == 1 && shellSection == shellItem.CurrentItem)
+							if ((shellSection as IShellSectionController).GetItems().Count == 1 && shellSection == shellItem.CurrentItem)
 							{
 								currentGroup.AddRange(shellSection.CurrentItem.MenuItems);
 							}
@@ -760,13 +1010,12 @@ namespace Xamarin.Forms
 				}
 				else
 				{
-					currentGroup.Add(shellItem);
+					if (!(shellItem is TabBar))
+						currentGroup.Add(shellItem);
 				}
 			}
 
 			IncrementGroup();
-
-			currentGroup.AddRange(MenuItems);
 
 			return result;
 		}
@@ -779,48 +1028,70 @@ namespace Xamarin.Forms
 
 		protected override bool OnBackButtonPressed()
 		{
+			if (GetVisiblePage() is Page page && page.SendBackButtonPressed())
+				return true;
+
 			var currentContent = CurrentItem?.CurrentItem;
 			if (currentContent != null && currentContent.Stack.Count > 1)
 			{
-				currentContent.Navigation.PopAsync();
+				NavigationPop();
 				return true;
 			}
-			return false;
-		}
 
-		protected override void OnChildAdded(Element child)
-		{
-			base.OnChildAdded(child);
+			var args = new ShellNavigatingEventArgs(this.CurrentState, "", ShellNavigationSource.Pop, true);
+			OnNavigating(args);
+			return args.Cancelled;
 
-			if (child is ShellItem shellItem && CurrentItem == null && !(child is MenuShellItem))
+			async void NavigationPop()
 			{
-				((IShellController)this).OnFlyoutItemSelected(shellItem);
+				try
+				{
+					await currentContent.Navigation.PopAsync();
+				}
+				catch(Exception exc)
+				{
+					Internals.Log.Warning(nameof(Shell), $"Failed to Navigate Back: {exc}");
+				}
 			}
 		}
 
-		protected override void OnChildRemoved(Element child)
-		{
-			base.OnChildRemoved(child);
+		bool ValidDefaultShellItem(Element child) => !(child is MenuShellItem);
 
-			if (child == CurrentItem && Items.Count > 0)
+		internal override IEnumerable<Element> ChildrenNotDrawnByThisElement
+		{
+			get
 			{
-				((IShellController)this).OnFlyoutItemSelected(Items[0]);
+				if (FlyoutHeaderView != null)
+					yield return FlyoutHeaderView;
 			}
 		}
 
-		protected virtual void OnNavigated(ShellNavigatedEventArgs args)
+		internal void ProcessNavigated(ShellNavigatedEventArgs args)
 		{
 			if (_accumulateNavigatedEvents)
 				_accumulatedEvent = args;
 			else
 			{
-				/* Removing this check for now as it doesn't properly cover all implicit scenarios
-				 * if (args.Current.Location.AbsolutePath.TrimEnd('/') != _lastNavigating.Location.AbsolutePath.TrimEnd('/'))
-					throw new InvalidOperationException($"Navigation: Current location doesn't match navigation uri {args.Current.Location.AbsolutePath} != {_lastNavigating.Location.AbsolutePath}");
-					*/
-				Navigated?.Invoke(this, args);
-				//System.Diagnostics.Debug.WriteLine("Navigated: " + args.Current.Location);
+				BaseShellItem baseShellItem = CurrentItem?.CurrentItem?.CurrentItem;
+
+				if (baseShellItem != null)
+				{
+					baseShellItem.OnAppearing(() =>
+					{
+						OnNavigated(args);
+						Navigated?.Invoke(this, args);
+					});
+				}
+				else
+				{
+					OnNavigated(args);
+					Navigated?.Invoke(this, args);
+				}
 			}
+		}
+
+		protected virtual void OnNavigated(ShellNavigatedEventArgs args)
+		{
 		}
 
 		ShellNavigationState _lastNavigating;
@@ -832,26 +1103,39 @@ namespace Xamarin.Forms
 
 		static void OnCurrentItemChanged(BindableObject bindable, object oldValue, object newValue)
 		{
+			if (oldValue is ShellItem oldShellItem)
+				oldShellItem.SendDisappearing();
+
+			if (newValue == null)
+				return;
+
+			if (newValue is ShellItem newShellItem)
+				newShellItem.SendAppearing();
+
 			var shell = (Shell)bindable;
 			UpdateChecked(shell);
 
-			((IShellController)shell).AppearanceChanged(shell, false);
-			((IShellController)shell).UpdateCurrentState(ShellNavigationSource.ShellItemChanged);
+			shell.ShellController.AppearanceChanged(shell, false);
+			shell.ShellController.UpdateCurrentState(ShellNavigationSource.ShellItemChanged);
 		}
 
 		static void OnCurrentItemChanging(BindableObject bindable, object oldValue, object newValue)
 		{
 			var shell = (Shell)bindable;
+			var shellItem = (ShellItem)newValue;
+
+			if (!shell.Items.Contains(shellItem))
+				shell.Items.Add(shellItem);
+
 			if (!shell._accumulateNavigatedEvents)
 			{
 				// We are not in the middle of a GoToAsync so this is a user requested change.
 				// We need to emit the Navigating event since GoToAsync wont be emitting it.
 
-				var shellItem = (ShellItem)newValue;
 				var shellSection = shellItem.CurrentItem;
 				var shellContent = shellSection.CurrentItem;
 				var stack = shellSection.Stack;
-				((IShellController)shell).ProposeNavigation(ShellNavigationSource.ShellItemChanged, shellItem, shellSection, shellContent, stack, false);
+				shell.ShellController.ProposeNavigation(ShellNavigationSource.ShellItemChanged, shellItem, shellSection, shellContent, stack, false);
 			}
 		}
 
@@ -867,7 +1151,7 @@ namespace Xamarin.Forms
 			if (root is Shell shell)
 			{
 				ShellItem currentItem = shell.CurrentItem;
-				var items = shell.Items;
+				var items = shell.ShellController.GetItems();
 				var count = items.Count;
 				for (int i = 0; i < count; i++)
 				{
@@ -878,7 +1162,7 @@ namespace Xamarin.Forms
 			else if (root is ShellItem shellItem)
 			{
 				var currentItem = shellItem.CurrentItem;
-				var items = shellItem.Items;
+				var items = (shellItem as IShellItemController).GetItems();
 				var count = items.Count;
 				for (int i = 0; i < count; i++)
 				{
@@ -889,7 +1173,7 @@ namespace Xamarin.Forms
 			else if (root is ShellSection shellSection)
 			{
 				var currentItem = shellSection.CurrentItem;
-				var items = shellSection.Items;
+				var items = (shellSection as IShellSectionController).GetItems();
 				var count = items.Count;
 				for (int i = 0; i < count; i++)
 				{
@@ -899,13 +1183,13 @@ namespace Xamarin.Forms
 			}
 		}
 
-		static void OnFlyoutHeaderChanged(BindableObject bindable, object oldValue, object newValue)
+		static void OnFlyoutHeaderChanging(BindableObject bindable, object oldValue, object newValue)
 		{
 			var shell = (Shell)bindable;
 			shell.OnFlyoutHeaderChanged(oldValue, newValue);
 		}
 
-		static void OnFlyoutHeaderTemplateChanged(BindableObject bindable, object oldValue, object newValue)
+		static void OnFlyoutHeaderTemplateChanging(BindableObject bindable, object oldValue, object newValue)
 		{
 			var shell = (Shell)bindable;
 			shell.OnFlyoutHeaderTemplateChanged((DataTemplate)oldValue, (DataTemplate)newValue);
@@ -944,20 +1228,50 @@ namespace Xamarin.Forms
 			return lookupDict;
 		}
 
-		FlyoutBehavior GetEffectiveFlyoutBehavior()
+		internal FlyoutBehavior GetEffectiveFlyoutBehavior()
 		{
-			var page = WalkToPage(this);
+			ShellItem rootItem = null;
+			return GetEffectiveValue(Shell.FlyoutBehaviorProperty, 
+				() =>
+				{
+					if (this.IsSet(FlyoutBehaviorProperty))
+						return FlyoutBehavior;
 
-			while (page != this && page != null)
-			{
-				if (page.IsSet(FlyoutBehaviorProperty))
-					return GetFlyoutBehavior(page);
-				page = page.Parent;
-			}
-			return FlyoutBehavior;
+					if (rootItem is FlyoutItem)
+						return FlyoutBehavior.Flyout;
+					else if (rootItem is TabBar)
+						return FlyoutBehavior.Disabled;
+
+					return FlyoutBehavior;
+				},
+				(o) => rootItem = rootItem ?? o as ShellItem);
 		}
 
-		ShellAppearance GetShellAppearanceForPivot(Element pivot)
+		internal T GetEffectiveValue<T>(BindableProperty property, T defaultValue)
+		{
+			return GetEffectiveValue<T>(property, () => defaultValue, null);
+		}
+
+		internal T GetEffectiveValue<T>(BindableProperty property, Func<T> defaultValue, Action<Element> observer, Element element = null)
+		{
+			element = element ?? GetVisiblePage() ?? CurrentContent;
+			while (element != this && element != null)
+			{
+				observer?.Invoke(element);
+
+				if (element.IsSet(property))
+					return (T)element.GetValue(property);
+
+				element = element.Parent;
+			}
+
+			if (defaultValue == null)
+				return default(T);
+
+			return defaultValue();
+		}
+
+		ShellAppearance GetAppearanceForPivot(Element pivot)
 		{
 			// this algorithm is pretty simple
 			// 1) Get the "CurrentPage" by walking down from the pivot
@@ -978,7 +1292,7 @@ namespace Xamarin.Forms
 
 				// One minor deviation here. Even though a pushed page is technically the child of
 				// a ShellSection and not the ShellContent, we want the root ShellContent to 
-				// be taken into account. Yes this could behavior oddly if the developer switches
+				// be taken into account. Yes this could behave oddly if the developer switches
 				// tabs while a page is pushed, however that is in the developers wheelhouse
 				// and this will be the generally expected behavior.
 				if (!foundShellContent && pivot is ShellSection shellSection && shellSection.CurrentItem != null)
@@ -1003,7 +1317,7 @@ namespace Xamarin.Forms
 
 		void NotifyFlyoutBehaviorObservers()
 		{
-			if (CurrentItem == null)
+			if (CurrentItem == null || GetVisiblePage() == null)
 				return;
 
 			var behavior = GetEffectiveFlyoutBehavior();
@@ -1050,6 +1364,14 @@ namespace Xamarin.Forms
 			return !navArgs.Cancelled;
 		}
 
+		internal Element GetVisiblePage()
+		{
+			if (CurrentItem?.CurrentItem is IShellSectionController scc)
+				return scc.PresentedPage;
+
+			return null;
+		}
+
 		Element WalkToPage(Element element)
 		{
 			switch (element)
@@ -1078,15 +1400,25 @@ namespace Xamarin.Forms
 				PropertyPropagationExtensions.PropagatePropertyChanged(propertyName, this, new[] { FlyoutHeaderView });
 		}
 
-		public class NavigationImpl : NavigationProxy
+
+
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public static void VerifyShellUWPFlagEnabled(
+			string constructorHint = null,
+			[CallerMemberName] string memberName = "")
+		{
+			ExperimentalFlags.VerifyFlagEnabled(nameof(Shell), ExperimentalFlags.ShellUWPExperimental);
+		}
+
+		class NavigationImpl : NavigationProxy
 		{
 			readonly Shell _shell;
 
-			NavigationProxy SectionProxy => _shell.CurrentItem.CurrentItem.NavigationProxy;			
+			NavigationProxy SectionProxy => _shell.CurrentItem?.CurrentItem?.NavigationProxy;
 
 			public NavigationImpl(Shell shell) => _shell = shell;
 
-			protected override IReadOnlyList<Page> GetNavigationStack() => SectionProxy.NavigationStack;
+			protected override IReadOnlyList<Page> GetNavigationStack() => SectionProxy?.NavigationStack;
 
 			protected override void OnInsertPageBefore(Page page, Page before) => SectionProxy.InsertPageBefore(page, before);
 
@@ -1097,6 +1429,55 @@ namespace Xamarin.Forms
 			protected override Task OnPushAsync(Page page, bool animated) => SectionProxy.PushAsync(page, animated);
 
 			protected override void OnRemovePage(Page page) => SectionProxy.RemovePage(page);
+
+			protected override async Task<Page> OnPopModal(bool animated)
+			{
+				if (ModalStack.Count > 0)
+					ModalStack[ModalStack.Count - 1].SendDisappearing();
+
+				if (!_shell.CurrentItem.CurrentItem.IsPoppingModalStack)
+				{
+					if (ModalStack.Count > 1)
+						ModalStack[ModalStack.Count - 2].SendAppearing();
+				}
+
+				var modalPopped =  await base.OnPopModal(animated);
+				
+				if (ModalStack.Count == 0 && !_shell.CurrentItem.CurrentItem.IsPoppingModalStack)
+					_shell.CurrentItem.SendAppearing();
+				
+				return modalPopped;
+			}
+			
+			protected override async Task OnPushModal(Page modal, bool animated)
+			{
+				if (ModalStack.Count == 0)
+					_shell.CurrentItem.SendDisappearing();
+
+				if (!_shell.CurrentItem.CurrentItem.IsPushingModalStack)
+					modal.SendAppearing();
+
+				await base.OnPushModal(modal, animated);
+
+				modal.NavigationProxy.Inner = new NavigationImplWrapper(modal.NavigationProxy.Inner,  this);
+			}
+			
+			
+			class NavigationImplWrapper : NavigationProxy
+			{
+				readonly INavigation _shellProxy;
+
+				public NavigationImplWrapper(INavigation proxy, INavigation shellProxy)
+				{
+					Inner = proxy;
+					_shellProxy = shellProxy;				
+
+				}
+
+				protected override Task<Page> OnPopModal(bool animated) => _shellProxy.PopModalAsync(animated);
+
+				protected override Task OnPushModal(Page modal, bool animated) => _shellProxy.PushModalAsync(modal, animated);
+			}			
 		}
 	}
 }

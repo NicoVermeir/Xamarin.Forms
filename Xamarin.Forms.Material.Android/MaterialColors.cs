@@ -8,6 +8,10 @@ using AProgressBar = Android.Widget.ProgressBar;
 using ASeekBar = Android.Widget.AbsSeekBar;
 using PlatformColor = Android.Graphics.Color;
 using Xamarin.Forms.Platform.Android;
+using System;
+using AGradientDrawable = Android.Graphics.Drawables.GradientDrawable;
+using AScaleDrawable = Android.Graphics.Drawables.ScaleDrawable;
+using ALayerDrawable = Android.Graphics.Drawables.LayerDrawable;
 #elif __IOS__
 using MaterialComponents;
 using Xamarin.Forms.Platform.iOS;
@@ -40,6 +44,7 @@ namespace Xamarin.Forms.Material.Tizen
 
 		public const float SliderTrackAlpha = kSliderBaselineEnabledBackgroundAlpha;
 
+		public const double kFrameCornerRadiusDefault = 4;
 		// values based on
 		// copying to match iOS
 		// TODO generalize into xplat classes
@@ -103,10 +108,37 @@ namespace Xamarin.Forms.Material.Tizen
 			return textColor != Color.Default ? ToPlatformColor(textColor) : MaterialColors.Light.PrimaryColor;
 		}
 
+		public static PlatformColor GetCheckBoxColor(bool isChecked, bool isEnabled)
+		{
+			if (isChecked && isEnabled)
+			{
+				return ToPlatformColor(new Color(0.129411771893501, 0.129411771893501, 0.129411771893501));
+			}
+			else if (!isChecked && isEnabled)
+			{
+				return ToPlatformColor(new Color(0, 0, 0, 0.54));
+			}
+			else if (isChecked && !isEnabled)
+			{
+				return ToPlatformColor(new Color(0, 0, 0, 0.38));
+			}
+			else
+			{
+				return ToPlatformColor(new Color(0, 0, 0, 0.38));
+			}
+		}
+
 #if __ANDROID__
 		public static readonly int[][] ButtonStates =
 		{
 			new int[] { global::Android.Resource.Attribute.StateEnabled },
+			new int[] { }
+		};
+
+		public static readonly int[][] ButtonTextStates =
+		{
+			new int[] { global::Android.Resource.Attribute.StateEnabled },
+			new int[] { ~global::Android.Resource.Attribute.StateEnabled },
 			new int[] { }
 		};
 
@@ -132,10 +164,10 @@ namespace Xamarin.Forms.Material.Tizen
 
 		// State list from material-components-android
 		// https://github.com/material-components/material-components-android/blob/3637c23078afc909e42833fd1c5fd47bb3271b5f/lib/java/com/google/android/material/button/res/color/mtrl_btn_text_color_selector.xml
-		public static ColorStateList CreateButtonTextColors(PlatformColor primary, PlatformColor text)
+		public static ColorStateList CreateButtonTextColors(PlatformColor primary, PlatformColor text, PlatformColor disabledText)
 		{
-			var colors = new int[] { text, primary.WithAlpha(0.38) };
-			return new ColorStateList(ButtonStates, colors);
+			var colors = new int[] { text, disabledText, primary.WithAlpha(0.38) };
+			return new ColorStateList(ButtonTextStates, colors);
 		}
 
 		public static ColorStateList CreateEntryFilledPlaceholderColors(PlatformColor inlineColor, PlatformColor floatingColor)
@@ -179,13 +211,28 @@ namespace Xamarin.Forms.Material.Tizen
 			}
 			else
 			{
-				seekBar.Thumb.SetColorFilter(thumbColor.ToAndroid(), PorterDuff.Mode.SrcIn);
+				seekBar.Thumb.SetColorFilter(thumbColor.ToAndroid(), FilterMode.SrcIn);
 			}
 		}
 
 		internal static void ApplyProgressBarColors(this AProgressBar progressBar, PlatformColor progressColor, PlatformColor backgroundColor, PorterDuff.Mode mode)
 		{
-			if(Forms.IsLollipopOrNewer)
+			if((int)Forms.SdkInt == 21 && progressBar.ProgressDrawable is ALayerDrawable progressDrawable)
+			{
+				progressBar.ProgressTintList = ColorStateList.ValueOf(progressColor);
+				progressBar.ProgressBackgroundTintList = ColorStateList.ValueOf(backgroundColor);
+				progressBar.ProgressBackgroundTintMode = mode;
+
+				if (progressDrawable.GetDrawable(0) is AGradientDrawable layer0)
+					layer0.SetColor(backgroundColor);
+
+				if (progressDrawable.GetDrawable(1) is AScaleDrawable layer1)
+					layer1.SetColorFilter(progressColor, FilterMode.SrcIn);
+
+				if (progressDrawable.GetDrawable(2) is AScaleDrawable layer2)
+					layer2.SetColorFilter(progressColor, FilterMode.SrcIn);
+			}
+			else if (Forms.IsLollipopOrNewer)
 			{
 				progressBar.ProgressTintList = ColorStateList.ValueOf(progressColor);
 				progressBar.ProgressBackgroundTintList = ColorStateList.ValueOf(backgroundColor);
@@ -194,7 +241,7 @@ namespace Xamarin.Forms.Material.Tizen
 			else
 			{
 				(progressBar.Indeterminate ? progressBar.IndeterminateDrawable :
-						   progressBar.ProgressDrawable).SetColorFilter(progressColor, PorterDuff.Mode.SrcIn);
+						   progressBar.ProgressDrawable).SetColorFilter(progressColor, FilterMode.SrcIn);
 
 			}
 		}
@@ -246,6 +293,7 @@ namespace Xamarin.Forms.Material.Tizen
 			public static readonly PlatformColor OnPrimaryColor = PlatformColor.White;
 			public static readonly PlatformColor SecondaryColor = FromRgb(33, 33, 33);
 			public static readonly PlatformColor OnSecondaryColor = PlatformColor.White;
+			public static readonly PlatformColor DisabledColor = WithAlpha(PlatformColor.Black, 0.38f);
 
 			// the Colors for "UI"
 			public static readonly PlatformColor BackgroundColor = PlatformColor.White;
@@ -393,6 +441,19 @@ namespace Xamarin.Forms.Material.Tizen
 #endif
 		}
 
+		static int GetAlpha(PlatformColor color)
+		{
+#if __ANDROID__
+			return color.A;
+#elif __IOS__
+			System.nfloat alpha;
+			color.GetRGBA(out _, out _, out _, out alpha);
+			return (int)alpha;
+
+#elif __TIZEN__
+			return color.A;
+#endif
+		}
 
 		static PlatformColor FromRgb(int red, int green, int blue)
 		{

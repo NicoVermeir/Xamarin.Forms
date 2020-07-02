@@ -6,14 +6,17 @@ using System.ComponentModel;
 using System.Threading.Tasks;
 using Xamarin.Forms.Internals;
 using Xamarin.Forms.Platform;
-using System.Diagnostics;
 
 namespace Xamarin.Forms
 {
 	public class Application : Element, IResourcesProvider, IApplicationController, IElementConfiguration<Application>
 	{
+		readonly WeakEventManager _weakEventManager = new WeakEventManager();
 		Task<IDictionary<string, object>> _propertiesTask;
 		readonly Lazy<PlatformConfigurationRegistry<Application>> _platformConfigurationRegistry;
+
+		public override IDispatcher Dispatcher => this.GetDispatcher();
+
 		IAppIndexingProvider _appIndexProvider;
 		ReadOnlyCollection<Element> _logicalChildren;
 		Page _mainPage;
@@ -28,12 +31,14 @@ namespace Xamarin.Forms
 			var f = false;
 			if (f)
 				Loader.Load();
-			NavigationProxy = new NavigationImpl(this);
-			SetCurrentApplication(this);
 
+			SetCurrentApplication(this);
+			NavigationProxy = new NavigationImpl(this);
 			SystemResources = DependencyService.Get<ISystemResourcesProvider>().GetSystemResources();
 			SystemResources.ValuesChanged += OnParentResourcesChanged;
 			_platformConfigurationRegistry = new Lazy<PlatformConfigurationRegistry<Application>>(() => new PlatformConfigurationRegistry<Application>(this));
+			// Initialize this value, when the app loads
+			_lastAppTheme = RequestedTheme;
 		}
 
 		public void Quit()
@@ -73,6 +78,7 @@ namespace Xamarin.Forms
 				if (_mainPage != null)
 				{
 					InternalChildren.Remove(_mainPage);
+
 					_mainPage.Parent = null;
 				}
 
@@ -107,7 +113,7 @@ namespace Xamarin.Forms
 		}
 
 		[EditorBrowsable(EditorBrowsableState.Never)]
-		public NavigationProxy NavigationProxy { get; }
+		public NavigationProxy NavigationProxy { get; private set; }
 
 		[EditorBrowsable(EditorBrowsableState.Never)]
 		public int PanGestureId { get; set; }
@@ -151,6 +157,59 @@ namespace Xamarin.Forms
 			}
 		}
 
+		public OSAppTheme UserAppTheme
+		{
+			get => _userAppTheme;
+			set
+			{
+				_userAppTheme = value;
+				TriggerThemeChangedActual(new AppThemeChangedEventArgs(value));
+			}
+		}
+		public OSAppTheme RequestedTheme => UserAppTheme == OSAppTheme.Unspecified ? Device.PlatformServices.RequestedTheme : UserAppTheme;
+
+		public event EventHandler<AppThemeChangedEventArgs> RequestedThemeChanged
+		{
+			add => _weakEventManager.AddEventHandler(value);
+			remove => _weakEventManager.RemoveEventHandler(value);
+		}
+
+		bool _themeChangedFiring;
+		OSAppTheme _lastAppTheme;
+		OSAppTheme _userAppTheme = OSAppTheme.Unspecified;
+
+
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public void TriggerThemeChanged(AppThemeChangedEventArgs args)
+		{
+			if (UserAppTheme != OSAppTheme.Unspecified)
+				return;
+			TriggerThemeChangedActual(args);
+		}
+
+		void TriggerThemeChangedActual(AppThemeChangedEventArgs args)
+		{
+			if (Device.Flags == null || Device.Flags.IndexOf(ExperimentalFlags.AppThemeExperimental) == -1)
+				return;
+
+			// On iOS the event is triggered more than once.
+			// To minimize that for us, we only do it when the theme actually changes and it's not currently firing
+			if (_themeChangedFiring || RequestedTheme == _lastAppTheme)
+				return;
+
+			try
+			{
+				_themeChangedFiring = true;
+				_lastAppTheme = RequestedTheme;
+
+				_weakEventManager.HandleEvent(this, args, nameof(RequestedThemeChanged));
+			}
+			finally
+			{
+				_themeChangedFiring = false;
+			}
+		}
+
 		public event EventHandler<ModalPoppedEventArgs> ModalPopped;
 
 		public event EventHandler<ModalPoppingEventArgs> ModalPopping;
@@ -177,9 +236,9 @@ namespace Xamarin.Forms
 
 		public async Task SavePropertiesAsync()
 		{
-			if (Device.IsInvokeRequired)
+			if (Dispatcher.IsInvokeRequired)
 			{
-				Device.BeginInvokeOnMainThread(SaveProperties);
+				Dispatcher.BeginInvokeOnMainThread(SaveProperties);
 			}
 			else
 			{
@@ -190,9 +249,9 @@ namespace Xamarin.Forms
 		// Don't use this unless there really is no better option
 		internal void SavePropertiesAsFireAndForget()
 		{
-			if (Device.IsInvokeRequired)
+			if (Dispatcher.IsInvokeRequired)
 			{
-				Device.BeginInvokeOnMainThread(SaveProperties);
+				Dispatcher.BeginInvokeOnMainThread(SaveProperties);
 			}
 			else
 			{
@@ -343,6 +402,21 @@ namespace Xamarin.Forms
 				SaveSemaphore.Release();
 			}
 
+		}
+
+		protected internal virtual void CleanUp()
+		{
+			// Unhook everything that's referencing the main page so it can be collected
+			// This only comes up if we're disposing of an embedded Forms app, and will
+			// eventually go away when we fully support multiple windows
+			if (_mainPage != null)
+			{
+				InternalChildren.Remove(_mainPage);
+				_mainPage.Parent = null;
+				_mainPage = null;
+			}
+
+			NavigationProxy = null;
 		}
 
 		class NavigationImpl : NavigationProxy

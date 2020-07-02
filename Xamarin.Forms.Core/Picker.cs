@@ -11,9 +11,11 @@ using Xamarin.Forms.Platform;
 namespace Xamarin.Forms
 {
 	[RenderWith(typeof(_PickerRenderer))]
-	public class Picker : View, IFontElement, ITextElement, IElementConfiguration<Picker>
+	public class Picker : View, IFontElement, ITextElement, ITextAlignmentElement, IElementConfiguration<Picker>
 	{
 		public static readonly BindableProperty TextColorProperty = TextElement.TextColorProperty;
+
+		public static readonly BindableProperty CharacterSpacingProperty = TextElement.CharacterSpacingProperty;
 
 		public static readonly BindableProperty TitleProperty =
 			BindableProperty.Create(nameof(Title), typeof(string), typeof(Picker), default(string));
@@ -38,7 +40,13 @@ namespace Xamarin.Forms
 		public static readonly BindableProperty FontSizeProperty = FontElement.FontSizeProperty;
 
 		public static readonly BindableProperty FontAttributesProperty = FontElement.FontAttributesProperty;
-		
+
+		public static readonly BindableProperty HorizontalTextAlignmentProperty = TextAlignmentElement.HorizontalTextAlignmentProperty;
+
+		public static readonly BindableProperty VerticalTextAlignmentProperty = TextAlignmentElement.VerticalTextAlignmentProperty;
+
+		public static readonly BindableProperty TextTransformProperty = TextElement.TextTransformProperty;
+
 		readonly Lazy<PlatformConfigurationRegistry<Picker>> _platformConfigurationRegistry;
 
 		public Picker()
@@ -63,7 +71,16 @@ namespace Xamarin.Forms
 		{
 			get { return (double)GetValue(FontSizeProperty); }
 			set { SetValue(FontSizeProperty, value); }
+		}		
+
+		public TextTransform TextTransform
+		{
+			get => (TextTransform)GetValue(TextTransformProperty);
+			set => SetValue(TextTransformProperty, value);
 		}
+
+		public virtual string UpdateFormsText(string source, TextTransform textTransform)
+			=> TextTransformUtilites.GetTransformedText(source, textTransform);
 
 		void IFontElement.OnFontFamilyChanged(string oldValue, string newValue) =>
 			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
@@ -78,6 +95,9 @@ namespace Xamarin.Forms
 			Device.GetNamedSize(NamedSize.Default, (Picker)this);
 
 		void IFontElement.OnFontAttributesChanged(FontAttributes oldValue, FontAttributes newValue) =>
+			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
+
+		void ITextElement.OnTextTransformChanged(TextTransform oldValue, TextTransform newValue) =>
 			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
 
 		public IList<string> Items { get; } = new LockableObservableListWrapper();
@@ -100,12 +120,20 @@ namespace Xamarin.Forms
 			set { SetValue(SelectedItemProperty, value); }
 		}
 
-		public Color TextColor {
+		public Color TextColor
+		{
 			get { return (Color)GetValue(TextElement.TextColorProperty); }
 			set { SetValue(TextElement.TextColorProperty, value); }
 		}
 
-		public string Title {
+		public double CharacterSpacing
+		{
+			get { return (double)GetValue(TextElement.CharacterSpacingProperty); }
+			set { SetValue(TextElement.CharacterSpacingProperty, value); }
+		}
+
+		public string Title
+		{
 			get { return (string)GetValue(TitleProperty); }
 			set { SetValue(TitleProperty, value); }
 		}
@@ -114,6 +142,18 @@ namespace Xamarin.Forms
 		{
 			get { return (Color)GetValue(TitleColorProperty); }
 			set { SetValue(TitleColorProperty, value); }
+		}
+
+		public TextAlignment HorizontalTextAlignment
+		{
+			get { return (TextAlignment)GetValue(TextAlignmentElement.HorizontalTextAlignmentProperty); }
+			set { SetValue(TextAlignmentElement.HorizontalTextAlignmentProperty, value); }
+		}
+
+		public TextAlignment VerticalTextAlignment
+		{
+			get { return (TextAlignment)GetValue(TextAlignmentElement.VerticalTextAlignmentProperty); }
+			set { SetValue(TextAlignmentElement.VerticalTextAlignmentProperty, value); }
 		}
 
 		BindingBase _itemDisplayBinding;
@@ -139,7 +179,7 @@ namespace Xamarin.Forms
 		string GetDisplayMember(object item)
 		{
 			if (ItemDisplayBinding == null)
-				return item.ToString();
+				return item == null ? string.Empty : item.ToString();
 
 			ItemDisplayBinding.Apply(item, this, s_displayProperty);
 			ItemDisplayBinding.Unapply();
@@ -274,5 +314,16 @@ namespace Xamarin.Forms
 		void ITextElement.OnTextColorPropertyChanged(Color oldValue, Color newValue)
 		{
 		}
+
+		void ITextElement.OnCharacterSpacingPropertyChanged(double oldValue, double newValue)
+		{
+			InvalidateMeasure();
+		}
+
+		void ITextAlignmentElement.OnHorizontalTextAlignmentPropertyChanged(TextAlignment oldValue, TextAlignment newValue)
+		{
+
+		}
+
 	}
 }

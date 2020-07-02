@@ -24,7 +24,7 @@ namespace Xamarin.Forms.Xaml
 	{
 		Dictionary<XmlName, INode> Properties { get; }
 		List<XmlName> SkipProperties { get; }
-		INameScope Namescope { get; }
+		NameScopeRef NameScopeRef { get; }
 		XmlType XmlType { get; }
 		string NamespaceURI { get; }
 	}
@@ -32,6 +32,11 @@ namespace Xamarin.Forms.Xaml
 	interface IListNode : INode
 	{
 		List<INode> CollectionItems { get; }
+	}
+
+	class NameScopeRef
+	{
+		public INameScope NameScope { get; set; }
 	}
 
 	[DebuggerDisplay("{NamespaceUri}:{Name}")]
@@ -112,6 +117,7 @@ namespace Xamarin.Forms.Xaml
 		};
 	}
 
+
 	[DebuggerDisplay("{XmlType.Name}")]
 	class ElementNode : BaseNode, IValueNode, IElementNode
 	{
@@ -131,11 +137,11 @@ namespace Xamarin.Forms.Xaml
 		public List<INode> CollectionItems { get; }
 		public XmlType XmlType { get; }
 		public string NamespaceURI { get; }
-		public INameScope Namescope { get; set; }
+		public NameScopeRef NameScopeRef { get; set; }
 
 		public override void Accept(IXamlNodeVisitor visitor, INode parentNode)
 		{
-			if (!SkipVisitNode(visitor, parentNode) && visitor.VisitingMode == TreeVisitingMode.TopDown)
+			if (visitor.VisitingMode == TreeVisitingMode.TopDown && !SkipVisitNode(visitor, parentNode))
 				visitor.Visit(this, parentNode);
 
 			if (!SkipChildren(visitor, this, parentNode)) {
@@ -145,17 +151,15 @@ namespace Xamarin.Forms.Xaml
 					node.Accept(visitor, this);
 			}
 
-			if (!SkipVisitNode(visitor, parentNode) && visitor.VisitingMode == TreeVisitingMode.BottomUp)
+			if (visitor.VisitingMode == TreeVisitingMode.BottomUp && !SkipVisitNode(visitor, parentNode))
 				visitor.Visit(this, parentNode);
 
 		}
 
 		bool IsDataTemplate(INode parentNode)
 		{
-			var parentElement = parentNode as IElementNode;
-			INode createContent;
-			if (parentElement != null &&
-				parentElement.Properties.TryGetValue(XmlName._CreateContent, out createContent) &&
+			if (parentNode is IElementNode parentElement &&
+				parentElement.Properties.TryGetValue(XmlName._CreateContent, out INode createContent) &&
 				createContent == this)
 				return true;
 			return false;
@@ -186,13 +190,13 @@ namespace Xamarin.Forms.Xaml
 
 	abstract class RootNode : ElementNode
 	{
-		protected RootNode(XmlType xmlType, IXmlNamespaceResolver nsResolver) : base(xmlType, xmlType.NamespaceUri, nsResolver)
+		protected RootNode(XmlType xmlType, IXmlNamespaceResolver nsResolver, int linenumber = -1, int lineposition = -1) : base(xmlType, xmlType.NamespaceUri, nsResolver, linenumber: linenumber, lineposition: lineposition)
 		{
 		}
 
 		public override void Accept(IXamlNodeVisitor visitor, INode parentNode)
 		{
-			if (!SkipVisitNode(visitor, parentNode) && visitor.VisitingMode == TreeVisitingMode.TopDown)
+			if (visitor.VisitingMode == TreeVisitingMode.TopDown && !SkipVisitNode(visitor, parentNode))
 				visitor.Visit(this, parentNode);
 
 			if (!SkipChildren(visitor, this, parentNode)) {
@@ -202,7 +206,7 @@ namespace Xamarin.Forms.Xaml
 					node.Accept(visitor, this);
 			}
 
-			if (!SkipVisitNode(visitor, parentNode) && visitor.VisitingMode == TreeVisitingMode.BottomUp)
+			if (visitor.VisitingMode == TreeVisitingMode.BottomUp && !SkipVisitNode(visitor, parentNode))
 				visitor.Visit(this, parentNode);
 		}
 	}

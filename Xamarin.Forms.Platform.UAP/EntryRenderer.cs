@@ -1,6 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
 using Windows.System;
+using Windows.UI.Text;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Input;
@@ -22,6 +23,7 @@ namespace Xamarin.Forms.Platform.UWP
 		bool _cursorPositionChangePending;
 		bool _selectionLengthChangePending;
 		bool _nativeSelectionIsUpdating;
+		string _transformedText;
 
 		IElementController ElementController => Element as IElementController;
 
@@ -56,13 +58,18 @@ namespace Xamarin.Forms.Platform.UWP
 				UpdatePlaceholder();
 				UpdateTextColor();
 				UpdateFont();
-				UpdateAlignment();
+				UpdateCharacterSpacing();
+				UpdateHorizontalTextAlignment();
+				UpdateVerticalTextAlignment();
 				UpdatePlaceholderColor();
 				UpdateMaxLength();
 				UpdateDetectReadingOrderFromContent();
 				UpdateReturnType();
 				UpdateIsReadOnly();
 				UpdateInputScope();
+				UpdateClearButtonVisibility();
+
+
 
 				if (_cursorPositionChangePending)
 					UpdateCursorPosition();
@@ -101,7 +108,7 @@ namespace Xamarin.Forms.Platform.UWP
 		{
 			base.OnElementPropertyChanged(sender, e);
 
-			if (e.PropertyName == Entry.TextProperty.PropertyName)
+			if (e.IsOneOf(Entry.TextProperty, Entry.TextTransformProperty))
 				UpdateText();
 			else if (e.PropertyName == Entry.IsPasswordProperty.PropertyName)
 				UpdateIsPassword();
@@ -109,6 +116,10 @@ namespace Xamarin.Forms.Platform.UWP
 				UpdatePlaceholder();
 			else if (e.PropertyName == Entry.TextColorProperty.PropertyName)
 				UpdateTextColor();
+			else if (e.PropertyName == Entry.CharacterSpacingProperty.PropertyName)
+			{
+				UpdateCharacterSpacing();
+			}
 			else if (e.PropertyName == InputView.KeyboardProperty.PropertyName)
 				UpdateInputScope();
 			else if (e.PropertyName == InputView.IsSpellCheckEnabledProperty.PropertyName)
@@ -122,11 +133,13 @@ namespace Xamarin.Forms.Platform.UWP
 			else if (e.PropertyName == Entry.FontSizeProperty.PropertyName)
 				UpdateFont();
 			else if (e.PropertyName == Entry.HorizontalTextAlignmentProperty.PropertyName)
-				UpdateAlignment();
+				UpdateHorizontalTextAlignment();
+			else if (e.PropertyName == Entry.VerticalTextAlignmentProperty.PropertyName)
+				UpdateVerticalTextAlignment();
 			else if (e.PropertyName == Entry.PlaceholderColorProperty.PropertyName)
 				UpdatePlaceholderColor();
 			else if (e.PropertyName == VisualElement.FlowDirectionProperty.PropertyName)
-				UpdateAlignment();
+				UpdateHorizontalTextAlignment();
 			else if (e.PropertyName == InputView.MaxLengthProperty.PropertyName)
 				UpdateMaxLength();
 			else if (e.PropertyName == Specifics.DetectReadingOrderFromContentProperty.PropertyName)
@@ -139,6 +152,8 @@ namespace Xamarin.Forms.Platform.UWP
 				UpdateSelectionLength();
 			else if (e.PropertyName == InputView.IsReadOnlyProperty.PropertyName)
 				UpdateIsReadOnly();
+			else if (e.PropertyName == Entry.ClearButtonVisibilityProperty.PropertyName)
+				UpdateClearButtonVisibility();
 		}
 
 		protected override void UpdateBackgroundColor()
@@ -157,7 +172,10 @@ namespace Xamarin.Forms.Platform.UWP
 
 		void OnNativeTextChanged(object sender, Windows.UI.Xaml.Controls.TextChangedEventArgs args)
 		{
-			Element.SetValueCore(Entry.TextProperty, Control.Text);
+			if (Control.Text == _transformedText)
+				return;
+			_transformedText = Element.UpdateFormsText(Control.Text, Element.TextTransform);
+			Element.SetValueCore(Entry.TextProperty, _transformedText);
 		}
 
 		void TextBoxOnKeyUp(object sender, KeyRoutedEventArgs args)
@@ -165,16 +183,27 @@ namespace Xamarin.Forms.Platform.UWP
 			if (args?.Key != VirtualKey.Enter)
 				return;
 
-
-			// Hide the soft keyboard; this matches the behavior of Forms on Android/iOS
-			Windows.UI.ViewManagement.InputPane.GetForCurrentView().TryHide();
+			if (Element.ReturnType == ReturnType.Next)
+			{
+				FocusManager.TryMoveFocus(FocusNavigationDirection.Next);
+			}
+			else
+			{
+				// Hide the soft keyboard; this matches the behavior of Forms on Android/iOS
+				Windows.UI.ViewManagement.InputPane.GetForCurrentView().TryHide();
+			}
 
 			((IEntryController)Element).SendCompleted();
 		}
 
-		void UpdateAlignment()
+		void UpdateHorizontalTextAlignment()
 		{
 			Control.TextAlignment = Element.HorizontalTextAlignment.ToNativeTextAlignment(((IVisualElementController)Element).EffectiveFlowDirection);
+		}
+
+		void UpdateVerticalTextAlignment()
+		{
+			Control.VerticalContentAlignment = Element.VerticalTextAlignment.ToNativeVerticalAlignment();
 		}
 
 		void UpdateFont()
@@ -209,6 +238,16 @@ namespace Xamarin.Forms.Platform.UWP
 			}
 
 			_fontApplied = true;
+		}
+
+		void UpdateCharacterSpacing()
+		{
+			Control.CharacterSpacing = Element.CharacterSpacing.ToEm();
+		}
+
+		void UpdateClearButtonVisibility()
+		{
+			Control.ClearButtonVisible = Element.ClearButtonVisibility == ClearButtonVisibility.WhileEditing;
 		}
 
 		void UpdateInputScope()
@@ -257,7 +296,7 @@ namespace Xamarin.Forms.Platform.UWP
 
 		void UpdateText()
 		{
-			Control.Text = Element.Text ?? "";
+			Control.Text = _transformedText = Element.UpdateFormsText(Element.Text, Element.TextTransform);
 		}
 
 		void UpdateTextColor()
@@ -431,6 +470,19 @@ namespace Xamarin.Forms.Platform.UWP
 		void UpdateIsReadOnly()
 		{
 			Control.IsReadOnly = Element.IsReadOnly;
+		}
+
+		public override SizeRequest GetDesiredSize(double widthConstraint, double heightConstraint)
+		{
+			FormsTextBox child = Control;
+
+			if (Children.Count == 0 || child == null)
+				return new SizeRequest();
+
+			var constraint = new Windows.Foundation.Size(widthConstraint, heightConstraint);
+            child.Measure(constraint);
+			var result = FormsTextBox.GetCopyOfSize(child, constraint);
+			return new SizeRequest(result);
 		}
 	}
 }

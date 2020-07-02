@@ -5,6 +5,7 @@ using System.Linq;
 using ElmSharp;
 using Xamarin.Forms.PlatformConfiguration.TizenSpecific;
 using EColor = ElmSharp.Color;
+using ERect = ElmSharp.Rect;
 using EToolbarItem = ElmSharp.ToolbarItem;
 using EToolbarItemEventArgs = ElmSharp.ToolbarItemEventArgs;
 
@@ -29,6 +30,9 @@ namespace Xamarin.Forms.Platform.Tizen
 			RegisterPropertyHandler(Page.TitleProperty, UpdateTitle);
 			RegisterPropertyHandler(nameof(Element.CurrentPage), OnCurrentPageChanged);
 			RegisterPropertyHandler(TabbedPage.BarBackgroundColorProperty, UpdateBarBackgroundColor);
+			RegisterPropertyHandler(TabbedPage.BarTextColorProperty, UpdateBarTextColor);
+			RegisterPropertyHandler(TabbedPage.SelectedTabColorProperty, UpdateSelectedTabColor);
+			RegisterPropertyHandler(TabbedPage.UnselectedTabColorProperty, UpdateUnselectedTabColor);
 		}
 
 		protected override void OnElementChanged(ElementChangedEventArgs<TabbedPage> e)
@@ -152,6 +156,10 @@ namespace Xamarin.Forms.Platform.Tizen
 			{
 				_toolbar.Style = style;
 				((IVisualElementController)Element).NativeSizeChanged();
+				UpdateBackgroundColor(false);
+				UpdateBarBackgroundColor(false);
+				UpdateSelectedTabColor(false);
+				UpdateUnselectedTabColor(false);
 			}
 		}
 
@@ -161,7 +169,7 @@ namespace Xamarin.Forms.Platform.Tizen
 				return;
 
 			int baseX = _innerBox.Geometry.X;
-			Rect bound = _scroller.Geometry;
+			ERect bound = _scroller.Geometry;
 			int index = 0;
 			foreach (var page in Element.Children)
 			{
@@ -202,21 +210,47 @@ namespace Xamarin.Forms.Platform.Tizen
 
 		void UpdateBarBackgroundColor(bool initialize)
 		{
-			if (initialize && Element.BackgroundColor.IsDefault)
+			if (initialize && Element.BarBackgroundColor.IsDefault)
 				return;
 
 			EColor bgColor = Element.BarBackgroundColor.ToNative();
 			_toolbar.BackgroundColor = bgColor;
 			foreach (EToolbarItem item in _itemToItemPage.Keys)
 			{
-				if (Element.BarBackgroundColor == Color.Default)
-				{
-					item.DeletePartColor("bg");
-				}
-				else
-				{
-					item.SetPartColor("bg", bgColor);
-				}
+				ApplyBarItemColors(item, BarItemColorType.Background, bgColor);
+			}
+		}
+
+		void UpdateBarTextColor(bool initialize)
+		{
+			if (initialize && Element.BarTextColor.IsDefault)
+				return;
+
+			foreach (EToolbarItem item in _itemToItemPage.Keys)
+			{
+				ApplyBarItemColors(item, BarItemColorType.Text, Element.BarTextColor.ToNative());
+			}
+		}
+
+		void UpdateSelectedTabColor(bool initialize)
+		{
+			if (initialize && Element.SelectedTabColor.IsDefault)
+				return;
+
+			foreach (EToolbarItem item in _itemToItemPage.Keys)
+			{
+				ApplyBarItemColors(item, BarItemColorType.SelectedTab, Element.SelectedTabColor.ToNative());
+			}
+		}
+
+		void UpdateUnselectedTabColor(bool initialize)
+		{
+			if (initialize && Element.UnselectedTabColor.IsDefault)
+				return;
+
+			foreach (EToolbarItem item in _itemToItemPage.Keys)
+			{
+				ApplyBarItemColors(item, BarItemColorType.UnselectedTab, Element.UnselectedTabColor.ToNative());
 			}
 		}
 
@@ -288,10 +322,10 @@ namespace Xamarin.Forms.Platform.Tizen
 			_toolbarItemList.Insert(index, toolbarItem);
 			_itemToItemPage.Add(toolbarItem, newItem);
 
-			if (Element.BarBackgroundColor != Color.Default)
-			{
-				toolbarItem.SetPartColor("bg", _toolbar.BackgroundColor);
-			}
+			ApplyBarItemColors(toolbarItem, BarItemColorType.Background, Element.BarBackgroundColor.ToNative());
+			ApplyBarItemColors(toolbarItem, BarItemColorType.Text, Element.BarTextColor.ToNative());
+			ApplyBarItemColors(toolbarItem, BarItemColorType.SelectedTab, Element.SelectedTabColor.ToNative());
+			ApplyBarItemColors(toolbarItem, BarItemColorType.UnselectedTab, Element.UnselectedTabColor.ToNative());
 
 			var childContent = Platform.GetOrCreateRenderer(newItem).NativeView;
 			_innerBox.PackEnd(childContent);
@@ -403,5 +437,126 @@ namespace Xamarin.Forms.Platform.Tizen
 			Element.UpdateFocusTreePolicy();
 			_isUpdateByCurrentPage = false;
 		}
+
+		void ApplyBarItemColors(EToolbarItem item, BarItemColorType type, EColor color)
+		{
+			if (color.IsDefault)
+			{
+				ClearBarItemColors(item, type);
+			}
+			else
+			{
+				switch (type)
+				{
+					case BarItemColorType.Background:
+						item.SetPartColor("bg", color);
+						break;
+					case BarItemColorType.Text:
+						if (string.IsNullOrEmpty(item.Icon))
+						{
+							item.SetPartColor("text", color);
+							item.SetPartColor("text_pressed", color);
+							item.SetPartColor("text_selected", color);
+						}
+						else
+						{
+							item.SetPartColor("text_under_icon", color);
+							item.SetPartColor("text_under_icon_pressed", color);
+							item.SetPartColor("text_under_icon_selected", color);
+						}
+						item.SetPartColor("underline", color);
+						break;
+					case BarItemColorType.SelectedTab:
+						if (string.IsNullOrEmpty(item.Icon))
+						{
+							item.SetPartColor("text_selected", color);
+						}
+						else
+						{
+							item.SetPartColor("text_under_icon_selected", color);
+							item.SetPartColor("icon_selected", color);
+						}
+						item.SetPartColor("underline", color);
+						break;
+					case BarItemColorType.UnselectedTab:
+						if (string.IsNullOrEmpty(item.Icon))
+						{
+							item.SetPartColor("text", color);
+							item.SetPartColor("text_pressed", color);
+						}
+						else
+						{
+							item.SetPartColor("text_under_icon", color);
+							item.SetPartColor("text_under_icon_pressed", color);
+							item.SetPartColor("icon", color);
+							item.SetPartColor("icon_pressed", color);
+						}
+						break;
+					default:
+						break;
+				}
+			}
+		}
+
+		void ClearBarItemColors(EToolbarItem item, BarItemColorType type)
+		{
+			switch (type)
+			{
+				case BarItemColorType.Background:
+					item.DeletePartColor("bg");
+					break;
+				case BarItemColorType.Text:
+					if (string.IsNullOrEmpty(item.Icon))
+					{
+						item.DeletePartColor("text");
+						item.DeletePartColor("text_pressed");
+						item.DeletePartColor("text_selected");
+					}
+					else
+					{
+						item.DeletePartColor("text_under_icon");
+						item.DeletePartColor("text_under_icon_pressed");
+						item.DeletePartColor("text_under_icon_selected");
+					}
+					item.DeletePartColor("underline");
+					break;
+				case BarItemColorType.SelectedTab:
+					if (string.IsNullOrEmpty(item.Icon))
+					{
+						item.DeletePartColor("text_selected");
+					}
+					else
+					{
+						item.DeletePartColor("text_under_icon_selected");
+						item.DeletePartColor("icon_selected");
+					}
+					item.DeletePartColor("underline");
+					break;
+				case BarItemColorType.UnselectedTab:
+					if (string.IsNullOrEmpty(item.Icon))
+					{
+						item.DeletePartColor("text");
+						item.DeletePartColor("text_pressed");
+					}
+					else
+					{
+						item.DeletePartColor("text_under_icon");
+						item.DeletePartColor("text_under_icon_pressed");
+						item.DeletePartColor("icon");
+						item.DeletePartColor("icon_pressed");
+					}
+					break;
+				default:
+					break;
+			}
+		}
+	}
+
+	enum BarItemColorType
+	{
+		Background,
+		Text,
+		SelectedTab,
+		UnselectedTab
 	}
 }

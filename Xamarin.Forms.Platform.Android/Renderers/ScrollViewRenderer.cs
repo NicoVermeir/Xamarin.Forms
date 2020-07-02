@@ -4,7 +4,11 @@ using System.Threading.Tasks;
 using Android.Animation;
 using Android.Content;
 using Android.Graphics;
+#if __ANDROID_29__
+using AndroidX.Core.Widget;
+#else
 using Android.Support.V4.Widget;
+#endif
 using Android.Views;
 using Android.Widget;
 using Xamarin.Forms.Internals;
@@ -75,6 +79,8 @@ namespace Xamarin.Forms.Platform.Android
 			if (oldElement != null)
 			{
 				oldElement.PropertyChanged -= HandlePropertyChanged;
+				oldElement.LayoutChanged -= HandleLayoutChanged;
+
 				((IScrollViewController)oldElement).ScrollToRequested -= OnScrollToRequested;
 			}
 			if (element != null)
@@ -88,6 +94,8 @@ namespace Xamarin.Forms.Platform.Android
 				}
 
 				_view.PropertyChanged += HandlePropertyChanged;
+				_view.LayoutChanged += HandleLayoutChanged;
+
 				Controller.ScrollToRequested += OnScrollToRequested;
 
 				LoadContent();
@@ -105,6 +113,11 @@ namespace Xamarin.Forms.Platform.Android
 			}
 
 			EffectUtilities.RegisterEffectControlProvider(this, oldElement, element);
+		}
+
+		void HandleLayoutChanged(object sender, EventArgs e)
+		{
+			UpdateLayout();
 		}
 
 		void UpdateFlowDirection()
@@ -127,8 +140,7 @@ namespace Xamarin.Forms.Platform.Android
 
 		public void UpdateLayout()
 		{
-			if (Tracker != null)
-				Tracker.UpdateLayout();
+			Tracker?.UpdateLayout();
 		}
 
 		public ViewGroup ViewGroup => this;
@@ -373,6 +385,10 @@ namespace Xamarin.Forms.Platform.Android
 			while (IsLayoutRequested)
 			{
 				await Task.Delay(TimeSpan.FromMilliseconds(1));
+				
+				if (_disposed)
+                	return;
+				
 				cycle++;
 
 				if (cycle >= 10)

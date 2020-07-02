@@ -11,6 +11,9 @@ using System.Threading;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Github, 4187, "Picker list shows up, when focus is set on other controls", PlatformAffected.Android)]
 	public class Issue4187 : TestCarouselPage
@@ -189,7 +192,7 @@ namespace Xamarin.Forms.Controls.Issues
 
 		bool DialogIsOpened()
 		{
-			Thread.Sleep(1500);
+			RunningApp.WaitForElement(q => q.Class("FrameLayout"));
 			var frameLayouts = RunningApp.Query(q => q.Class("FrameLayout"));
 			foreach (var layout in frameLayouts)
 			{

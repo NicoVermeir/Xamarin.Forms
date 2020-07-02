@@ -3,6 +3,7 @@ using System.Linq;
 using Android.Graphics;
 using Android.Graphics.Drawables;
 using AColor = Android.Graphics.Color;
+using APath = Android.Graphics.Path;
 
 namespace Xamarin.Forms.Platform.Android
 {
@@ -185,7 +186,7 @@ namespace Xamarin.Forms.Platform.Android
 		void DrawBackground(Canvas canvas, int width, int height, bool pressed)
 		{
 			var paint = new Paint { AntiAlias = true };
-			var path = new Path();
+			var path = new APath();
 
 			float borderRadius = ConvertCornerRadiusToPixels();
 
@@ -193,7 +194,7 @@ namespace Xamarin.Forms.Platform.Android
 
 			rect.Inset(PaddingLeft, PaddingTop);
 
-			path.AddRoundRect(rect, borderRadius, borderRadius, Path.Direction.Cw);
+			path.AddRoundRect(rect, borderRadius, borderRadius, APath.Direction.Cw);
 
 			paint.Color = pressed ? PressedBackgroundColor.ToAndroid() : BackgroundColor.ToAndroid();
 			paint.SetStyle(Paint.Style.Fill);
@@ -219,13 +220,55 @@ namespace Xamarin.Forms.Platform.Android
 			return rect;
 		}
 
+		public void DrawCircle(Canvas canvas, int width, int height, Action<Canvas> finishDraw)
+		{
+			try
+			{
+				var radius = (float)BorderElement.CornerRadius;
+				if(radius <= 0)
+				{
+					finishDraw(canvas);
+					return;
+				}
+
+				var borderThickness = _convertToPixels(BorderElement.BorderWidth);
+
+				using (var path = new APath())
+				{
+					float borderWidth = _convertToPixels(BorderElement.BorderWidth);
+					float inset = borderWidth / 2;
+
+					// adjust border radius so outer edge of stroke is same radius as border radius of background
+					float borderRadius = Math.Max(ConvertCornerRadiusToPixels() - inset, 0);
+
+					RectF rect = new RectF(0, 0, width , height);
+					rect.Inset(PaddingLeft, PaddingTop);
+					path.AddRoundRect(rect, borderRadius, borderRadius, APath.Direction.Ccw);
+
+					canvas.Save();
+					canvas.ClipPath(path);
+
+					finishDraw(canvas);
+				}
+
+				canvas.Restore();
+				return;
+			}
+			catch (Exception ex)
+			{
+				Internals.Log.Warning(nameof(BorderDrawable), $"Unable to create circle image: {ex}");
+			}
+
+			finishDraw(canvas);
+		}
+
 		public void DrawOutline(Canvas canvas, int width, int height)
 		{
 			if (BorderElement.BorderWidth <= 0)
 				return;
 
 			using (var paint = new Paint { AntiAlias = true })
-			using (var path = new Path())
+			using (var path = new APath())
 			{
 				float borderWidth = _convertToPixels(BorderElement.BorderWidth);
 				float inset = borderWidth / 2;
@@ -236,7 +279,7 @@ namespace Xamarin.Forms.Platform.Android
 				RectF rect = new RectF(0, 0, width, height);
 				rect.Inset(inset + PaddingLeft, inset + PaddingTop);
 
-				path.AddRoundRect(rect, borderRadius, borderRadius, Path.Direction.Cw);
+				path.AddRoundRect(rect, borderRadius, borderRadius, APath.Direction.Cw);
 				paint.StrokeWidth = borderWidth;
 				paint.SetStyle(Paint.Style.Stroke);
 				paint.Color = BorderElement.BorderColor.ToAndroid();

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Windows.Foundation;
 using Windows.UI.Xaml;
@@ -15,6 +16,7 @@ using Windows.UI.Xaml.Media;
 using WListView = Windows.UI.Xaml.Controls.ListView;
 using WBinding = Windows.UI.Xaml.Data.Binding;
 using WApp = Windows.UI.Xaml.Application;
+using WRect = Windows.Foundation.Rect;
 using Xamarin.Forms.Internals;
 using Xamarin.Forms.PlatformConfiguration.WindowsSpecific;
 using Specifics = Xamarin.Forms.PlatformConfiguration.WindowsSpecific.ListView;
@@ -40,6 +42,16 @@ namespace Xamarin.Forms.Platform.UWP
 
 		protected WListView List { get; private set; }
 
+		protected class ListViewTransparent : WListView
+		{
+			public ListViewTransparent() : base() { }
+
+			// Container is not created when the item is null. 
+			// To prevent this, base container preparationan receives an empty object.
+			protected override void PrepareContainerForItemOverride(DependencyObject element, object item)
+				=> base.PrepareContainerForItemOverride(element, item ?? new object());
+		}
+
 		protected override void OnElementChanged(ElementChangedEventArgs<ListView> e)
 		{
 			base.OnElementChanged(e);
@@ -49,6 +61,10 @@ namespace Xamarin.Forms.Platform.UWP
 				e.OldElement.ItemSelected -= OnElementItemSelected;
 				e.OldElement.ScrollToRequested -= OnElementScrollToRequested;
 				((ITemplatedItemsView<Cell>)e.OldElement).TemplatedItems.CollectionChanged -= OnCollectionChanged;
+				if (Control != null)
+				{
+					Control.Loaded -= ControlOnLoaded;
+				}
 			}
 
 			if (e.NewElement != null)
@@ -59,7 +75,7 @@ namespace Xamarin.Forms.Platform.UWP
 
 				if (List == null)
 				{
-					List = new WListView
+					List = new ListViewTransparent
 					{
 						IsSynchronizedWithCurrentItem = false,
 						ItemTemplate = (Windows.UI.Xaml.DataTemplate)WApp.Current.Resources["CellTemplate"],
@@ -74,9 +90,6 @@ namespace Xamarin.Forms.Platform.UWP
 
 				ReloadData();
 
-				if (Element.SelectedItem != null)
-					OnElementItemSelected(null, new SelectedItemChangedEventArgs(Element.SelectedItem, TemplatedItemsView.TemplatedItems.GetGlobalIndexOfItem(Element.SelectedItem)));
-
 				UpdateGrouping();
 				UpdateHeader();
 				UpdateFooter();
@@ -85,18 +98,33 @@ namespace Xamarin.Forms.Platform.UWP
 				ClearSizeEstimate();
 				UpdateVerticalScrollBarVisibility();
 				UpdateHorizontalScrollBarVisibility();
+
+				if (Control != null)
+				{
+					Control.Loaded += ControlOnLoaded;
+				}
 			}
+		}
+
+		void ControlOnLoaded(object sender, RoutedEventArgs e)
+		{
+			var scrollViewer = GetScrollViewer();
+			scrollViewer?.RegisterPropertyChangedCallback(ScrollViewer.VerticalOffsetProperty, (o, dp) =>
+			{
+				var args = new ScrolledEventArgs(0, _scrollViewer.VerticalOffset);
+				Element?.SendScrolled(args);
+			});
 		}
 
 		bool IsObservableCollection(object source)
 		{
-			var type = source.GetType();
-			return type.IsGenericType &&
-				   type.GetGenericTypeDefinition() == typeof(ObservableCollection<>);
+			return source is INotifyCollectionChanged && source is IList;
 		}
 
 		void ReloadData()
 		{
+			var isStillTheSameUnderlyingItemsSource = _collection != null && object.ReferenceEquals(_collection, Element?.ItemsSource);
+
 			if (Element?.ItemsSource == null)
 			{
 				_collection = null;
@@ -104,17 +132,21 @@ namespace Xamarin.Forms.Platform.UWP
 			else
 			{
 				_collectionIsWrapped = !IsObservableCollection(Element.ItemsSource);
+
 				if (_collectionIsWrapped)
 				{
 					_collection = new ObservableCollection<object>();
 					foreach (var item in Element.ItemsSource)
 						_collection.Add(item);
 				}
-				else
+				else if(!object.ReferenceEquals(_collection, Element.ItemsSource))
 				{
 					_collection = (IList)Element.ItemsSource;
 				}
 			}
+
+			if (isStillTheSameUnderlyingItemsSource && _collectionViewSource != null)
+				return;
 
 			if (_collectionViewSource != null)
 				_collectionViewSource.Source = null;
@@ -200,7 +232,10 @@ namespace Xamarin.Forms.Platform.UWP
 				ReloadData();
 			}
 
-			Device.BeginInvokeOnMainThread(() => List?.UpdateLayout());
+			if (Element.Dispatcher == null)
+				Device.BeginInvokeOnMainThread(() => List?.UpdateLayout());
+			else
+				Element.Dispatcher.BeginInvokeOnMainThread(() => List?.UpdateLayout());
 		}
 
 		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -408,6 +443,10 @@ namespace Xamarin.Forms.Platform.UWP
 			else if (Element.SelectionMode == ListViewSelectionMode.Single)
 			{
 				List.SelectionMode = Windows.UI.Xaml.Controls.ListViewSelectionMode.Single;
+
+				// UWP seems to reset the selected item when SelectionMode is set, make sure our items stays selected by doing this call
+				if (Element.SelectedItem != null)
+					OnElementItemSelected(null, new SelectedItemChangedEventArgs(Element.SelectedItem, TemplatedItemsView.TemplatedItems.GetGlobalIndexOfItem(Element.SelectedItem)));
 			}
 		}
 
@@ -586,9 +625,9 @@ namespace Xamarin.Forms.Platform.UWP
 							double tHeight = content.DesiredSize.Height;
 
 							if (toPosition == ScrollToPosition.Center)
-								semanticLocation.Bounds = new Rect(0, viewportHeight / 2 - tHeight / 2, 0, 0);
+								semanticLocation.Bounds = new WRect(0, viewportHeight / 2 - tHeight / 2, 0, 0);
 							else
-								semanticLocation.Bounds = new Rect(0, viewportHeight - tHeight, 0, 0);
+								semanticLocation.Bounds = new WRect(0, viewportHeight - tHeight, 0, 0);
 
 							break;
 						}
@@ -741,7 +780,14 @@ namespace Xamarin.Forms.Platform.UWP
 
 		void OnControlSelectionChanged(object sender, WSelectionChangedEventArgs e)
 		{
-			if (Element.SelectedItem != List.SelectedItem)
+			bool areEqual = false;
+
+			if (Element.SelectedItem != null && Element.SelectedItem.GetType().GetTypeInfo().IsValueType)
+				areEqual = Element.SelectedItem.Equals(List.SelectedItem);
+			else
+				areEqual = Element.SelectedItem == List.SelectedItem;
+
+			if (!areEqual)
 			{
 				if (_itemWasClicked)
 					List.SelectedItem = Element.SelectedItem;
@@ -768,9 +814,13 @@ namespace Xamarin.Forms.Platform.UWP
 
 		protected override AutomationPeer OnCreateAutomationPeer()
 		{
-			return List == null
-				? new FrameworkElementAutomationPeer(this)
-				: new ListViewAutomationPeer(List);
+			if (List == null)
+				return new FrameworkElementAutomationPeer(this);
+
+			var automationPeer = new ListViewAutomationPeer(List);
+			// skip this renderer from automationPeer tree to avoid infinity loop
+			automationPeer.SetParent(new FrameworkElementAutomationPeer(Parent as FrameworkElement));
+			return automationPeer;
 		}
 
 	}

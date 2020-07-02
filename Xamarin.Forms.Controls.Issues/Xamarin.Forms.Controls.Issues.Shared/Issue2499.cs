@@ -10,6 +10,9 @@ using NUnit.Framework;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Github, 2499, "Binding Context set to Null in Picker", PlatformAffected.All)]
 	public class Issue2499 : TestContentPage
@@ -38,6 +41,8 @@ namespace Xamarin.Forms.Controls.Issues
 		{
 			RunningApp.WaitForElement("picker");
 			RunningApp.Tap("picker");
+			RunningApp.WaitForElement("cat");
+
 			AppResult[] items = RunningApp.Query("cat");
 			Assert.AreNotEqual(items.Length, 0);
 			RunningApp.WaitForElement(q => q.Marked("mouse"));

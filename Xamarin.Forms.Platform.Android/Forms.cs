@@ -20,17 +20,50 @@ using Xamarin.Forms.Internals;
 using Xamarin.Forms.Platform.Android;
 using Resource = Android.Resource;
 using Trace = System.Diagnostics.Trace;
-using ALayoutDirection = Android.Views.LayoutDirection;
 using System.ComponentModel;
+using AColor = Android.Graphics.Color;
+#if __ANDROID_29__
+using AndroidX.Core.Content;
+#else
+using Android.Support.V4.Content;
+#endif
 
 namespace Xamarin.Forms
 {
+	public struct InitializationOptions
+	{
+		public struct EffectScope
+		{
+			public string Name;
+			public ExportEffectAttribute[] Effects;
+		}
+
+		public InitializationOptions(Context activity, Bundle bundle, Assembly resourceAssembly)
+		{
+			this = default(InitializationOptions);
+			Activity = activity;
+			Bundle = bundle;
+			ResourceAssembly = resourceAssembly;
+		}
+		public Context Activity;
+		public Bundle Bundle;
+		public Assembly ResourceAssembly;
+		public HandlerAttribute[] Handlers;
+		public EffectScope[] EffectScopes;
+		public InitializationFlags Flags;
+	}
+
 	public static class Forms
 	{
 		const int TabletCrossover = 600;
 
+		static BuildVersionCodes? s_sdkInt;
 		static bool? s_isLollipopOrNewer;
+		static bool? s_is29OrNewer;
 		static bool? s_isMarshmallowOrNewer;
+		static bool? s_isNougatOrNewer;
+		static bool? s_isOreoOrNewer;
+		static bool? s_isJellyBeanMr1OrNewer;
 
 		[Obsolete("Context is obsolete as of version 2.5. Please use a local context instead.")]
 		[EditorBrowsable(EditorBrowsableState.Never)]
@@ -46,12 +79,42 @@ namespace Xamarin.Forms
 		static Color _ColorButtonNormal = Color.Default;
 		public static Color ColorButtonNormalOverride { get; set; }
 
+		internal static BuildVersionCodes SdkInt
+		{
+			get
+			{
+				if (!s_sdkInt.HasValue)
+					s_sdkInt = Build.VERSION.SdkInt;
+				return (BuildVersionCodes)s_sdkInt;
+			}
+		}
+
+		internal static bool Is29OrNewer
+		{
+			get
+			{
+				if (!s_is29OrNewer.HasValue)
+					s_is29OrNewer = (int)SdkInt >= 29;
+				return s_is29OrNewer.Value;
+			}
+		}
+		
+		internal static bool IsJellyBeanMr1OrNewer
+		{
+			get
+			{
+				if (!s_isJellyBeanMr1OrNewer.HasValue)
+					s_isJellyBeanMr1OrNewer = SdkInt >= BuildVersionCodes.JellyBeanMr1;
+				return s_isJellyBeanMr1OrNewer.Value;
+			}
+		}
+
 		internal static bool IsLollipopOrNewer
 		{
 			get
 			{
 				if (!s_isLollipopOrNewer.HasValue)
-					s_isLollipopOrNewer = (int)Build.VERSION.SdkInt >= 21;
+					s_isLollipopOrNewer = SdkInt >= BuildVersionCodes.Lollipop;
 				return s_isLollipopOrNewer.Value;
 			}
 		}
@@ -61,8 +124,28 @@ namespace Xamarin.Forms
 			get
 			{
 				if (!s_isMarshmallowOrNewer.HasValue)
-					s_isMarshmallowOrNewer = (int)Build.VERSION.SdkInt >= 23;
+					s_isMarshmallowOrNewer = SdkInt >= BuildVersionCodes.M;
 				return s_isMarshmallowOrNewer.Value;
+			}
+		}
+
+		internal static bool IsNougatOrNewer
+		{
+			get
+			{
+				if (!s_isNougatOrNewer.HasValue)
+					s_isNougatOrNewer = SdkInt >= BuildVersionCodes.N;
+				return s_isNougatOrNewer.Value;
+			}
+		}
+
+		internal static bool IsOreoOrNewer
+		{
+			get
+			{
+				if (!s_isOreoOrNewer.HasValue)
+					s_isOreoOrNewer = SdkInt >= BuildVersionCodes.O;
+				return s_isOreoOrNewer.Value;
 			}
 		}
 
@@ -76,7 +159,7 @@ namespace Xamarin.Forms
 			//this doesn't seem to work
 			using (var value = new TypedValue())
 			{
-				if (context.Theme.ResolveAttribute(Resource.Attribute.TextSize, value, true)) 
+				if (context.Theme.ResolveAttribute(Resource.Attribute.TextSize, value, true))
 				{
 					size = value.Data;
 				}
@@ -100,13 +183,33 @@ namespace Xamarin.Forms
 		// Why is bundle a param if never used?
 		public static void Init(Context activity, Bundle bundle)
 		{
-			Assembly resourceAssembly = Assembly.GetCallingAssembly();
-			SetupInit(activity, resourceAssembly);
+			Assembly resourceAssembly;
+
+			Profile.FrameBegin("Assembly.GetCallingAssembly");
+			resourceAssembly = Assembly.GetCallingAssembly();
+			Profile.FrameEnd("Assembly.GetCallingAssembly");
+
+			Profile.FrameBegin();
+			SetupInit(activity, resourceAssembly, null);
+			Profile.FrameEnd();
 		}
 
 		public static void Init(Context activity, Bundle bundle, Assembly resourceAssembly)
 		{
-			SetupInit(activity, resourceAssembly);
+			Profile.FrameBegin();
+			SetupInit(activity, resourceAssembly, null);
+			Profile.FrameEnd();
+		}
+
+		public static void Init(InitializationOptions options)
+		{
+			Profile.FrameBegin();
+			SetupInit(
+				options.Activity,
+				options.ResourceAssembly,
+				options
+			);
+			Profile.FrameEnd();
 		}
 
 		/// <summary>
@@ -156,8 +259,14 @@ namespace Xamarin.Forms
 				viewInitialized(self, new ViewInitializedEventArgs { View = self, NativeView = nativeView });
 		}
 
-		static void SetupInit(Context activity, Assembly resourceAssembly)
+		static void SetupInit(
+			Context activity,
+			Assembly resourceAssembly,
+			InitializationOptions? maybeOptions = null
+		)
 		{
+			Profile.FrameBegin();
+
 			if (!IsInitialized)
 			{
 				// Only need to get this once; it won't change
@@ -171,9 +280,11 @@ namespace Xamarin.Forms
 			if (!IsInitialized)
 			{
 				// Only need to do this once
+				Profile.FramePartition("ResourceManager.Init");
 				ResourceManager.Init(resourceAssembly);
 			}
 
+			Profile.FramePartition("Color.SetAccent()");
 			// We want this to be updated when we have a new activity (e.g. on a configuration change)
 			// This could change if the UI mode changes (e.g., if night mode is enabled)
 			Color.SetAccent(GetAccentColor(activity));
@@ -182,11 +293,13 @@ namespace Xamarin.Forms
 			if (!IsInitialized)
 			{
 				// Only need to do this once
+				Profile.FramePartition("Log.Listeners");
 				Internals.Log.Listeners.Add(new DelegateLogListener((c, m) => Trace.WriteLine(m, c)));
 			}
 
 			// We want this to be updated when we have a new activity (e.g. on a configuration change)
 			// because AndroidPlatformServices needs a current activity to launch URIs from
+			Profile.FramePartition("Device.PlatformServices");
 			Device.PlatformServices = new AndroidPlatformServices(activity);
 
 			// use field and not property to avoid exception in getter
@@ -198,35 +311,110 @@ namespace Xamarin.Forms
 
 			// We want this to be updated when we have a new activity (e.g. on a configuration change)
 			// because Device.Info watches for orientation changes and we need a current activity for that
+			Profile.FramePartition("create AndroidDeviceInfo");
 			Device.Info = new AndroidDeviceInfo(activity);
+
+			Profile.FramePartition("setFlags");
 			Device.SetFlags(s_flags);
 
-			var ticker = Ticker.Default as AndroidTicker;
-			if (ticker != null)
-				ticker.Dispose();
-			Ticker.SetDefault(new AndroidTicker());
+			Profile.FramePartition("AndroidTicker");
+			Ticker.SetDefault(null);
+
+			Profile.FramePartition("RegisterAll");
 
 			if (!IsInitialized)
 			{
-				// Only need to do this once
-				Registrar.RegisterAll(new[] { typeof(ExportRendererAttribute), typeof(ExportCellAttribute), typeof(ExportImageSourceHandlerAttribute) });
+				if (maybeOptions.HasValue)
+				{
+					var options = maybeOptions.Value;
+					var handlers = options.Handlers;
+					var flags = options.Flags;
+					var effectScopes = options.EffectScopes;
+
+					//TODO: ExportCell?
+					//TODO: ExportFont
+
+					// renderers
+					Registrar.RegisterRenderers(handlers);
+
+					// effects
+					if (effectScopes != null)
+					{
+						for (var i = 0; i < effectScopes.Length; i++)
+						{
+							var effectScope = effectScopes[0];
+							Registrar.RegisterEffects(effectScope.Name, effectScope.Effects);
+						}
+					}
+
+					// css
+					Registrar.RegisterStylesheets(flags);
+				}
+				else
+				{
+					// Only need to do this once
+					Registrar.RegisterAll(new[] {
+						typeof(ExportRendererAttribute),
+						typeof(ExportCellAttribute),
+						typeof(ExportImageSourceHandlerAttribute),
+						typeof(ExportFontAttribute)
+					});
+				}
 			}
 
-			// This could change as a result of a config change, so we need to check it every time
-			int minWidthDp = activity.Resources.Configuration.SmallestScreenWidthDp;
-			Device.SetIdiom(minWidthDp >= TabletCrossover ? TargetIdiom.Tablet : TargetIdiom.Phone);
+			Profile.FramePartition("Epilog");
 
-			if (Build.VERSION.SdkInt >= BuildVersionCodes.JellyBeanMr1)
+			var currentIdiom = TargetIdiom.Unsupported;
+
+			// first try UIModeManager
+			using (var uiModeManager = UiModeManager.FromContext(ApplicationContext))
+			{
+				try
+				{
+					var uiMode = uiModeManager?.CurrentModeType ?? UiMode.TypeUndefined;
+					currentIdiom = DetectIdiom(uiMode);
+				}
+				catch (Exception ex)
+				{
+					System.Diagnostics.Debug.WriteLine($"Unable to detect using UiModeManager: {ex.Message}");
+				}
+			}
+
+			if (TargetIdiom.Unsupported == currentIdiom)
+			{
+				// This could change as a result of a config change, so we need to check it every time
+				int minWidthDp = activity.Resources.Configuration.SmallestScreenWidthDp;
+				Device.SetIdiom(minWidthDp >= TabletCrossover ? TargetIdiom.Tablet : TargetIdiom.Phone);
+			}
+
+			if (SdkInt >= BuildVersionCodes.JellyBeanMr1)
 				Device.SetFlowDirection(activity.Resources.Configuration.LayoutDirection.ToFlowDirection());
 
 			if (ExpressionSearch.Default == null)
 				ExpressionSearch.Default = new AndroidExpressionSearch();
 
 			IsInitialized = true;
+			Profile.FrameEnd();
+		}
+
+		static TargetIdiom DetectIdiom(UiMode uiMode)
+		{
+			var returnValue = TargetIdiom.Unsupported;
+			if (uiMode.HasFlag(UiMode.TypeNormal))
+				returnValue = TargetIdiom.Unsupported;
+			else if (uiMode.HasFlag(UiMode.TypeTelevision))
+				returnValue = TargetIdiom.TV;
+			else if (uiMode.HasFlag(UiMode.TypeDesk))
+				returnValue = TargetIdiom.Desktop;
+			else if (SdkInt >= BuildVersionCodes.KitkatWatch && uiMode.HasFlag(UiMode.TypeWatch))
+				returnValue = TargetIdiom.Watch;
+
+			Device.SetIdiom(returnValue);
+			return returnValue;
 		}
 
 		static IReadOnlyList<string> s_flags;
-		public static IReadOnlyList<string> Flags => s_flags ?? (s_flags = new List<string>().AsReadOnly());
+		public static IReadOnlyList<string> Flags => s_flags ?? (s_flags = new string[0]);
 
 		public static void SetFlags(params string[] flags)
 		{
@@ -242,7 +430,9 @@ namespace Xamarin.Forms
 				throw new InvalidOperationException($"{nameof(SetFlags)} must be called before {nameof(Init)}");
 			}
 
-			s_flags = flags.ToList().AsReadOnly();
+			s_flags = (string[])flags.Clone();
+			if (s_flags.Contains ("Profile"))
+				Profile.Enable();
 			FlagsSet = true;
 		}
 
@@ -263,7 +453,7 @@ namespace Xamarin.Forms
 				{
 					// Detect if legacy device and use appropriate accent color
 					// Hardcoded because could not get color from the theme drawable
-					var sdkVersion = (int)Build.VERSION.SdkInt;
+					var sdkVersion = (int)SdkInt;
 					if (sdkVersion <= 10)
 					{
 						// legacy theme button pressed color
@@ -304,21 +494,16 @@ namespace Xamarin.Forms
 		{
 			bool _disposed;
 			readonly Context _formsActivity;
-			readonly Size _pixelScreenSize;
-			readonly double _scalingFactor;
+			Size _scaledScreenSize;
+			Size _pixelScreenSize;
+			double _scalingFactor;
 
 			Orientation _previousOrientation = Orientation.Undefined;
+			Platform.Android.DualScreen.IDualScreenService DualScreenService => DependencyService.Get<Platform.Android.DualScreen.IDualScreenService>();
 
 			public AndroidDeviceInfo(Context formsActivity)
 			{
-				using (DisplayMetrics display = formsActivity.Resources.DisplayMetrics)
-				{
-					_scalingFactor = display.Density;
-					_pixelScreenSize = new Size(display.WidthPixels, display.HeightPixels);
-					ScaledScreenSize = new Size(_pixelScreenSize.Width / _scalingFactor, _pixelScreenSize.Height / _scalingFactor);
-				}
-
-				CheckOrientationChanged(formsActivity.Resources.Configuration.Orientation);
+				CheckOrientationChanged(formsActivity);
 
 				// This will not be an implementation of IDeviceInfoProvider when running inside the context
 				// of layoutlib, which is what the Android Designer does.
@@ -335,7 +520,7 @@ namespace Xamarin.Forms
 				get { return _pixelScreenSize; }
 			}
 
-			public override Size ScaledScreenSize { get; }
+			public override Size ScaledScreenSize => _scaledScreenSize;
 
 			public override double ScalingFactor
 			{
@@ -365,17 +550,40 @@ namespace Xamarin.Forms
 				base.Dispose(disposing);
 			}
 
-			void CheckOrientationChanged(Orientation orientation)
+			void UpdateScreenMetrics(Context formsActivity)
 			{
+				using (DisplayMetrics display = formsActivity.Resources.DisplayMetrics)
+				{
+					_scalingFactor = display.Density;
+					_pixelScreenSize = new Size(display.WidthPixels, display.HeightPixels);
+					_scaledScreenSize = new Size(_pixelScreenSize.Width / _scalingFactor, _pixelScreenSize.Height / _scalingFactor);
+				}
+			}
+
+			void CheckOrientationChanged(Context formsActivity)
+			{
+				Orientation orientation;
+
+				if (DualScreenService?.IsSpanned == true)
+				{
+					orientation = (DualScreenService.IsLandscape) ? Orientation.Landscape : Orientation.Portrait;
+				}
+				else
+				{
+					orientation = formsActivity.Resources.Configuration.Orientation;
+				}
+
 				if (!_previousOrientation.Equals(orientation))
 					CurrentOrientation = orientation.ToDeviceOrientation();
 
 				_previousOrientation = orientation;
+
+				UpdateScreenMetrics(formsActivity);
 			}
 
 			void ConfigurationChanged(object sender, EventArgs e)
 			{
-				CheckOrientationChanged(_formsActivity.Resources.Configuration.Orientation);
+				CheckOrientationChanged(_formsActivity);
 			}
 		}
 
@@ -408,7 +616,6 @@ namespace Xamarin.Forms
 
 		class AndroidPlatformServices : IPlatformServices
 		{
-			static readonly MD5CryptoServiceProvider Checksum = new MD5CryptoServiceProvider();
 			double _buttonDefaultSize;
 			double _editTextDefaultSize;
 			double _labelDefaultSize;
@@ -429,6 +636,12 @@ namespace Xamarin.Forms
 
 			public void BeginInvokeOnMainThread(Action action)
 			{
+				if (_context.IsDesignerContext())
+				{
+					action();
+					return;
+				}
+
 				if (s_handler == null || s_handler.Looper != Looper.MainLooper)
 				{
 					s_handler = new Handler(Looper.MainLooper);
@@ -447,17 +660,9 @@ namespace Xamarin.Forms
 				return AppDomain.CurrentDomain.GetAssemblies();
 			}
 
-			public string GetMD5Hash(string input)
-			{
-				byte[] bytes = Checksum.ComputeHash(Encoding.UTF8.GetBytes(input));
-				var ret = new char[32];
-				for (var i = 0; i < 16; i++)
-				{
-					ret[i * 2] = (char)Hex(bytes[i] >> 4);
-					ret[i * 2 + 1] = (char)Hex(bytes[i] & 0xf);
-				}
-				return new string(ret);
-			}
+			public string GetHash(string input) => Crc64.GetHash(input);
+
+			string IPlatformServices.GetMD5Hash(string input) => GetHash(input);
 
 			public double GetNamedSize(NamedSize size, Type targetElementType, bool useOldSizes)
 			{
@@ -525,22 +730,99 @@ namespace Xamarin.Forms
 						return _mediumSize;
 					case NamedSize.Large:
 						return _largeSize;
+					case NamedSize.Body:
+						return 16;
+					case NamedSize.Caption:
+						return 12;
+					case NamedSize.Header:
+						return 96;
+					case NamedSize.Subtitle:
+						return 16;
+					case NamedSize.Title:
+						return 24;
 					default:
 						throw new ArgumentOutOfRangeException("size");
 				}
 			}
 
+			public Color GetNamedColor(string name)
+			{
+				int color;
+				switch (name)
+				{
+					case NamedPlatformColor.BackgroundDark:
+						color = ContextCompat.GetColor(_context, Resource.Color.BackgroundDark);
+						break;
+					case NamedPlatformColor.BackgroundLight:
+						color = ContextCompat.GetColor(_context, Resource.Color.BackgroundLight);
+						break;
+					case NamedPlatformColor.Black:
+						color = ContextCompat.GetColor(_context, Resource.Color.Black);
+						break;
+					case NamedPlatformColor.DarkerGray:
+						color = ContextCompat.GetColor(_context, Resource.Color.DarkerGray);
+						break;
+					case NamedPlatformColor.HoloBlueBright:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloBlueBright);
+						break;
+					case NamedPlatformColor.HoloBlueDark:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloBlueDark);
+						break;
+					case NamedPlatformColor.HoloBlueLight:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloBlueLight);
+						break;
+					case NamedPlatformColor.HoloGreenDark:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloGreenDark);
+						break;
+					case NamedPlatformColor.HoloGreenLight:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloGreenLight);
+						break;
+					case NamedPlatformColor.HoloOrangeDark:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloOrangeDark);
+						break;
+					case NamedPlatformColor.HoloOrangeLight:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloOrangeLight);
+						break;
+					case NamedPlatformColor.HoloPurple:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloPurple);
+						break;
+					case NamedPlatformColor.HoloRedDark:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloRedDark);
+						break;
+					case NamedPlatformColor.HoloRedLight:
+						color = ContextCompat.GetColor(_context, Resource.Color.HoloRedLight);
+						break;
+					case NamedPlatformColor.TabIndicatorText:
+						color = ContextCompat.GetColor(_context, Resource.Color.TabIndicatorText);
+						break;
+					case NamedPlatformColor.Transparent:
+						color = ContextCompat.GetColor(_context, Resource.Color.Transparent);
+						break;
+					case NamedPlatformColor.White:
+						color = ContextCompat.GetColor(_context, Resource.Color.White);
+						break;
+					case NamedPlatformColor.WidgetEditTextDark:
+						color = ContextCompat.GetColor(_context, Resource.Color.WidgetEditTextDark);
+						break;
+					default:
+						return Color.Default;
+				}
+
+				if (color != 0)
+					return new AColor(color).ToColor();
+
+				return Color.Default;
+			}
+
 			public async Task<Stream> GetStreamAsync(Uri uri, CancellationToken cancellationToken)
 			{
 				using (var client = new HttpClient())
-				using (HttpResponseMessage response = await client.GetAsync(uri, cancellationToken))
 				{
-					if (!response.IsSuccessStatusCode)
-					{
-						Internals.Log.Warning("HTTP Request", $"Could not retrieve {uri}, status code {response.StatusCode}");
-						return null;
-					}
-					return await response.Content.ReadAsStreamAsync();
+					// Do not remove this await otherwise the client will dispose before
+					// the stream even starts
+					var result = await StreamWrapper.GetStreamAsync(uri, cancellationToken, client).ConfigureAwait(false);
+
+					return result;
 				}
 			}
 
@@ -637,6 +919,23 @@ namespace Xamarin.Forms
 			public SizeRequest GetNativeSize(VisualElement view, double widthConstraint, double heightConstraint)
 			{
 				return Platform.Android.Platform.GetNativeSize(view, widthConstraint, heightConstraint);
+			}
+
+			public OSAppTheme RequestedTheme
+            {
+                get
+                {
+                    var nightMode = _context.Resources.Configuration.UiMode & UiMode.NightMask;
+                    switch (nightMode)
+                    {
+                        case UiMode.NightYes:
+                            return OSAppTheme.Dark;
+                        case UiMode.NightNo:
+                            return OSAppTheme.Light;
+                        default:
+                            return OSAppTheme.Unspecified;
+					};
+				}
 			}
 
 			public class _IsolatedStorageFile : IIsolatedStorageFile

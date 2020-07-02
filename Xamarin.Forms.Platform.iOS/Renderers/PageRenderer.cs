@@ -5,10 +5,11 @@ using Foundation;
 using UIKit;
 using Xamarin.Forms.PlatformConfiguration.iOSSpecific;
 using PageUIStatusBarAnimation = Xamarin.Forms.PlatformConfiguration.iOSSpecific.UIStatusBarAnimation;
+using PageSpecific = Xamarin.Forms.PlatformConfiguration.iOSSpecific.Page;
 
 namespace Xamarin.Forms.Platform.iOS
 {
-	public class PageRenderer : UIViewController, IVisualElementRenderer, IEffectControlProvider, IAccessibilityElementsController
+	public class PageRenderer : UIViewController, IVisualElementRenderer, IEffectControlProvider, IAccessibilityElementsController, IShellContentInsetObserver
 	{
 		bool _appeared;
 		bool _disposed;
@@ -22,10 +23,14 @@ namespace Xamarin.Forms.Platform.iOS
 
 		Page Page => Element as Page;
 		IAccessibilityElementsController AccessibilityElementsController => this;
-
-		bool UsingSafeArea => (Forms.IsiOS11OrNewer) ? Page.On<PlatformConfiguration.iOS>().UsingSafeArea() : false;
 		Thickness SafeAreaInsets => Page.On<PlatformConfiguration.iOS>().SafeAreaInsets();
+		bool IsPartOfShell => (Element?.Parent is BaseShellItem);
+		ShellSection _shellSection;
+		bool _safeAreasSet = false;
+		Thickness _userPadding = default(Thickness);
+		bool _userOverriddenSafeArea = false;
 
+		[Preserve(Conditional = true)]
 		public PageRenderer()
 		{
 		}
@@ -39,40 +44,49 @@ namespace Xamarin.Forms.Platform.iOS
 
 		public event EventHandler<VisualElementChangedEventArgs> ElementChanged;
 
+		List<NSObject> DefaultOrder()
+		{
+			var views = new List<NSObject>();
+			if (Container != null)
+				views.AddRange(Container.DescendantsTree());
+			return views;
+		}
+
 		public List<NSObject> GetAccessibilityElements()
 		{
 			if (Container == null || Element == null)
-				return null;
+				return new List<NSObject>();
 
-			var children = Element.Descendants();
 			SortedDictionary<int, List<ITabStopElement>> tabIndexes = null;
-			List<NSObject> views = new List<NSObject>();
-			foreach (var child in children)
+			foreach (var child in Element.LogicalChildren)
 			{
 				if (!(child is VisualElement ve))
 					continue;
 
-				tabIndexes = ve.GetSortedTabIndexesOnParentPage(out _);
+				tabIndexes = ve.GetSortedTabIndexesOnParentPage();
 				break;
 			}
 
 			if (tabIndexes == null)
-				return null;
+				return DefaultOrder();
 
+			// Just return all elements on the page in order.
+			if (tabIndexes.Count <= 1)
+				return DefaultOrder();
+
+			var views = new List<NSObject>();
 			foreach (var idx in tabIndexes?.Keys)
 			{
 				var tabGroup = tabIndexes[idx];
 				foreach (var child in tabGroup)
 				{
-					if (child is Layout ||
-						!(
-							child is VisualElement ve && ve.IsTabStop
-							&& AutomationProperties.GetIsInAccessibleTree(ve) != false // accessible == true
-							&& ve.GetRenderer().NativeView is ITabStop tabStop)
-						 )
+					if (!(child is VisualElement ve && ve.GetRenderer()?.NativeView is UIView view))
 						continue;
 
-					var thisControl = tabStop.TabStop;
+					UIView thisControl = null;
+
+					if (view is ITabStop tabStop)
+						thisControl = tabStop.TabStop;
 
 					if (thisControl == null)
 						continue;
@@ -111,6 +125,24 @@ namespace Xamarin.Forms.Platform.iOS
 					SetAutomationId(element.AutomationId);
 
 				element.SendViewInitialized(NativeView);
+
+				var parent = Element.Parent;
+
+				while (!Application.IsApplicationOrNull(parent))
+				{
+					if (parent is ShellContent)
+						_isInItems = true;
+
+					if (parent is ShellSection shellSection)
+					{
+						_shellSection = shellSection;
+						((IShellSectionController)_shellSection).AddContentInsetObserver(this);
+
+						break;
+					}
+
+					parent = parent.Parent;
+				}
 			}
 
 			EffectUtilities.RegisterEffectControlProvider(this, oldElement, element);
@@ -123,8 +155,9 @@ namespace Xamarin.Forms.Platform.iOS
 
 		public override void LoadView()
 		{
+			//by default use the MainScreen Bounds so Effects can access the Container size
 			if (_pageContainer == null)
-				_pageContainer = new PageContainer(this);
+				_pageContainer = new PageContainer(this) { Frame = UIScreen.MainScreen.Bounds };
 
 			View = _pageContainer;
 		}
@@ -132,7 +165,7 @@ namespace Xamarin.Forms.Platform.iOS
 		{
 			base.ViewWillLayoutSubviews();
 
-			AccessibilityElementsController.ResetAccessibilityElements();
+			Container?.ClearAccessibilityElements();
 		}
 
 		public override void ViewDidLayoutSubviews()
@@ -145,22 +178,14 @@ namespace Xamarin.Forms.Platform.iOS
 			if (Element.Parent is BaseShellItem)
 				Element.Layout(View.Bounds.ToRectangle());
 
-			UpdateShellInsetPadding();
+			if (_safeAreasSet || !Forms.IsiOS11OrNewer)
+				UpdateUseSafeArea();
 		}
 
 		public override void ViewSafeAreaInsetsDidChange()
 		{
-			UpdateShellInsetPadding();
-			if (Page != null && Forms.IsiOS11OrNewer)
-			{
-				var insets = NativeView.SafeAreaInsets;
-				if (Page.Parent is TabbedPage)
-				{
-					insets.Bottom = 0;
-				}
-				Page.On<PlatformConfiguration.iOS>().SetSafeAreaInsets(new Thickness(insets.Left, insets.Top, insets.Right, insets.Bottom));
-			}
-
+			_safeAreasSet = true;
+			UpdateUseSafeArea();
 			base.ViewSafeAreaInsetsDidChange();
 		}
 
@@ -175,7 +200,7 @@ namespace Xamarin.Forms.Platform.iOS
 
 			_appeared = true;
 			UpdateStatusBarPrefersHidden();
-			if(Forms.IsiOS11OrNewer)
+			if (Forms.RespondsToSetNeedsUpdateOfHomeIndicatorAutoHidden)
 				SetNeedsUpdateOfHomeIndicatorAutoHidden();
 
 			if (Element.Parent is CarouselPage)
@@ -206,7 +231,7 @@ namespace Xamarin.Forms.Platform.iOS
 			if (NativeView == null)
 				return;
 
-			var uiTapGestureRecognizer = new UITapGestureRecognizer(a => NativeView.EndEditing(true));
+			var uiTapGestureRecognizer = new UITapGestureRecognizer(a => NativeView?.EndEditing(true));
 
 			uiTapGestureRecognizer.ShouldRecognizeSimultaneously = (recognizer, gestureRecognizer) => true;
 			uiTapGestureRecognizer.ShouldReceiveTouch = OnShouldReceiveTouch;
@@ -235,10 +260,20 @@ namespace Xamarin.Forms.Platform.iOS
 			NativeView?.Window?.EndEditing(true);
 		}
 
+
 		protected override void Dispose(bool disposing)
 		{
-			if (disposing && !_disposed)
+			if (_disposed)
+				return;
+
+			if (disposing)
 			{
+				if (_shellSection != null)
+				{
+					((IShellSectionController)_shellSection).RemoveContentInsetObserver(this);
+					_shellSection = null;
+				}
+
 				Element.PropertyChanged -= OnHandlePropertyChanged;
 				Platform.SetRenderer(Element, null);
 				if (_appeared)
@@ -267,8 +302,9 @@ namespace Xamarin.Forms.Platform.iOS
 				Element = null;
 				Container?.Dispose();
 				_pageContainer = null;
-				_disposed = true;
 			}
+
+			_disposed = true;
 
 			base.Dispose(disposing);
 		}
@@ -295,11 +331,19 @@ namespace Xamarin.Forms.Platform.iOS
 			else if (e.PropertyName == PlatformConfiguration.iOSSpecific.Page.PrefersStatusBarHiddenProperty.PropertyName)
 				UpdateStatusBarPrefersHidden();
 			else if (Forms.IsiOS11OrNewer && e.PropertyName == PlatformConfiguration.iOSSpecific.Page.UseSafeAreaProperty.PropertyName)
+			{
+				_userOverriddenSafeArea = false;
 				UpdateUseSafeArea();
+			}
 			else if (Forms.IsiOS11OrNewer && e.PropertyName == PlatformConfiguration.iOSSpecific.Page.SafeAreaInsetsProperty.PropertyName)
 				UpdateUseSafeArea();
 			else if (e.PropertyName == PlatformConfiguration.iOSSpecific.Page.PrefersHomeIndicatorAutoHiddenProperty.PropertyName)
 				UpdateHomeIndicatorAutoHidden();
+			else if (e.PropertyName == Page.PaddingProperty.PropertyName)
+			{
+				if (ShouldUseSafeArea() && Page.Padding != SafeAreaInsets)
+					_userOverriddenSafeArea = true;
+			}
 		}
 
 		public override UIKit.UIStatusBarAnimation PreferredStatusBarUpdateAnimation
@@ -320,49 +364,107 @@ namespace Xamarin.Forms.Platform.iOS
 			}
 		}
 
-		void IAccessibilityElementsController.ResetAccessibilityElements()
+		public override void TraitCollectionDidChange(UITraitCollection previousTraitCollection)
 		{
-			Container?.ClearAccessibilityElements();
+			base.TraitCollectionDidChange(previousTraitCollection);
+
+#if __XCODE11__
+			if (Forms.IsiOS13OrNewer && previousTraitCollection.UserInterfaceStyle != TraitCollection.UserInterfaceStyle)
+				Application.Current?.TriggerThemeChanged(new AppThemeChangedEventArgs(Application.Current.RequestedTheme));
+#endif
+		}
+
+		bool ShouldUseSafeArea()
+		{
+			bool usingSafeArea = Page.On<PlatformConfiguration.iOS>().UsingSafeArea();
+			bool isSafeAreaSet = Element.IsSet(PageSpecific.UseSafeAreaProperty);
+
+			if (IsPartOfShell && !isSafeAreaSet)
+				usingSafeArea = true;
+
+			return usingSafeArea;
 		}
 
 		void UpdateUseSafeArea()
 		{
-			if (!Forms.IsiOS11OrNewer)
+			if (Element == null)
 				return;
 
-			if (!UsingSafeArea)
-			{
-				var safeAreaInsets = SafeAreaInsets;
-				if (safeAreaInsets == Page.Padding)
-					Page.Padding = default(Thickness);
-			}
-			else
-			{
-				Page.Padding = SafeAreaInsets;
-			}
-		}
-
-		void UpdateShellInsetPadding()
-		{
-			if (!(Element?.Parent is ShellContent))
+			if (_userOverriddenSafeArea)
 				return;
 
-			nfloat topPadding = 0;
-			nfloat bottomPadding = 0;
+			if (!IsPartOfShell && !Forms.IsiOS11OrNewer)
+				return;
+
+			var tabThickness = _tabThickness;
+			if (!_isInItems)
+				tabThickness = 0;
+
+			Thickness safeareaPadding = default(Thickness);
+
+			if (Page.Padding != SafeAreaInsets)
+				_userPadding = Page.Padding;
 
 			if (Forms.IsiOS11OrNewer)
 			{
-				topPadding = View.SafeAreaInsets.Top;
-				bottomPadding = View.SafeAreaInsets.Bottom;
+				var insets = NativeView.SafeAreaInsets;
+				if (Page.Parent is TabbedPage)
+				{
+					insets.Bottom = 0;
+				}
+
+				safeareaPadding = new Thickness(insets.Left, insets.Top + tabThickness, insets.Right, insets.Bottom);
+				Page.On<PlatformConfiguration.iOS>().SetSafeAreaInsets(safeareaPadding);
 			}
-			else
+			else if (IsPartOfShell)
 			{
-				topPadding = TopLayoutGuide.Length;
-				bottomPadding = BottomLayoutGuide.Length;
+				safeareaPadding = new Thickness(0, TopLayoutGuide.Length + tabThickness, 0, BottomLayoutGuide.Length);
+				Page.On<PlatformConfiguration.iOS>().SetSafeAreaInsets(safeareaPadding);
 			}
 
-			Page.Padding = new Thickness(0, topPadding, 0, bottomPadding);
+			bool usingSafeArea = Page.On<PlatformConfiguration.iOS>().UsingSafeArea();
+			bool isSafeAreaSet = Element.IsSet(PageSpecific.UseSafeAreaProperty);
+
+			if (IsPartOfShell && !isSafeAreaSet)
+			{
+				if (Shell.GetNavBarIsVisible(Element) || _tabThickness != default(Thickness))
+					usingSafeArea = true;
+			}
+
+			if (!usingSafeArea && isSafeAreaSet && Page.Padding == safeareaPadding)
+			{
+				Page.SetValueFromRenderer(Page.PaddingProperty, _userPadding);
+			}
+
+			if (!usingSafeArea)
+				return;
+
+			if (SafeAreaInsets == Page.Padding)
+				return;
+
+			// this is determining if there is a UIScrollView control occupying the whole screen
+			if (IsPartOfShell && !isSafeAreaSet)
+			{
+				var subViewSearch = View;
+				for (int i = 0; i < 2 && subViewSearch != null; i++)
+				{
+					if (subViewSearch?.Subviews.Length > 0)
+					{
+						if (subViewSearch.Subviews[0] is UIScrollView)
+							return;
+
+						subViewSearch = subViewSearch.Subviews[0];
+					}
+					else
+					{
+						subViewSearch = null;
+					}
+				}
+			}
+
+			Page.SetValueFromRenderer(Page.PaddingProperty, SafeAreaInsets);
 		}
+
 
 		void UpdateStatusBarPrefersHidden()
 		{
@@ -415,7 +517,7 @@ namespace Xamarin.Forms.Platform.iOS
 				if (bgImage != null)
 					NativeView.BackgroundColor = UIColor.FromPatternImage(bgImage);
 				else if (Element.BackgroundColor.IsDefault)
-					NativeView.BackgroundColor = UIColor.White;
+					NativeView.BackgroundColor = ColorExtensions.BackgroundColor;
 				else
 					NativeView.BackgroundColor = Element.BackgroundColor.ToUIColor();
 			});
@@ -438,10 +540,23 @@ namespace Xamarin.Forms.Platform.iOS
 
 		void UpdateHomeIndicatorAutoHidden()
 		{
-			if (Element == null || !Forms.IsiOS11OrNewer)
+			if (Element == null || !Forms.RespondsToSetNeedsUpdateOfHomeIndicatorAutoHidden)
 				return;
 
 			SetNeedsUpdateOfHomeIndicatorAutoHidden();
+		}
+
+		double _tabThickness;
+		bool _isInItems;
+
+		void IShellContentInsetObserver.OnInsetChanged(Thickness inset, double tabThickness)
+		{
+			if (_tabThickness != tabThickness)
+			{
+				_safeAreasSet = true;
+				_tabThickness = tabThickness;
+				UpdateUseSafeArea();
+			}
 		}
 
 		public override bool PrefersHomeIndicatorAutoHidden => Page.OnThisPlatform().PrefersHomeIndicatorAutoHidden();

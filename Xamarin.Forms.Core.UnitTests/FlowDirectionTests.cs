@@ -9,7 +9,6 @@ namespace Xamarin.Forms.Core.UnitTests
 	[TestFixture]
 	public class FlowDirectionTests : BaseTestFixture
 	{
-
 		[Test]
 		public void ListViewFlowDirectionIsInheritedByViewCells()
 		{
@@ -532,10 +531,9 @@ namespace Xamarin.Forms.Core.UnitTests
 		[SetUp]
 		public override void Setup()
 		{
-			Device.SetFlags(new List<string> { ExperimentalFlags.ShellExperimental });
-
 			base.Setup();
 			Device.PlatformServices = new MockPlatformServices();
+			Device.FlowDirection = FlowDirection.LeftToRight;
 		}
 
 		[TearDown]

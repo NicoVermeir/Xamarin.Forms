@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using WThickness = System.Windows.Thickness;
 
 namespace Xamarin.Forms.Platform.WPF
 {
@@ -27,9 +28,11 @@ namespace Xamarin.Forms.Platform.WPF
 				UpdateText();
 				UpdateTextDecorations();
 				UpdateColor();
-				UpdateAlign();
+				UpdateHorizontalTextAlign();
+				UpdateVerticalTextAlign();
 				UpdateFont();
 				UpdateLineBreakMode();
+				UpdatePadding();
 			}
 
 			base.OnElementChanged(e);
@@ -46,18 +49,24 @@ namespace Xamarin.Forms.Platform.WPF
 		{
 			base.OnElementPropertyChanged(sender, e);
 
-			if (e.PropertyName == Label.TextProperty.PropertyName || e.PropertyName == Label.FormattedTextProperty.PropertyName)
+			if (e.PropertyName == Label.TextProperty.PropertyName || 
+				e.PropertyName == Label.FormattedTextProperty.PropertyName ||
+				e.PropertyName == Label.TextTransformProperty.PropertyName)
 				UpdateText();
 			else if (e.PropertyName == Label.TextDecorationsProperty.PropertyName)
 				UpdateTextDecorations();
 			else if (e.PropertyName == Label.TextColorProperty.PropertyName)
 				UpdateColor();
-			else if (e.PropertyName == Label.HorizontalTextAlignmentProperty.PropertyName || e.PropertyName == Label.VerticalTextAlignmentProperty.PropertyName)
-				UpdateAlign();
+			else if (e.PropertyName == Label.HorizontalTextAlignmentProperty.PropertyName)
+				UpdateHorizontalTextAlign();
+			else if (e.PropertyName == Label.VerticalTextAlignmentProperty.PropertyName)
+				UpdateVerticalTextAlign();
 			else if (e.PropertyName == Label.FontProperty.PropertyName)
 				UpdateFont();
 			else if (e.PropertyName == Label.LineBreakModeProperty.PropertyName)
 				UpdateLineBreakMode();
+			else if (e.PropertyName == Label.PaddingProperty.PropertyName)
+				UpdatePadding();
 		}
 
 		protected override void UpdateBackground()
@@ -88,7 +97,7 @@ namespace Xamarin.Forms.Platform.WPF
 		}
 
 
-		void UpdateAlign()
+		void UpdateHorizontalTextAlign()
 		{
 			if (Control == null)
 				return;
@@ -98,6 +107,18 @@ namespace Xamarin.Forms.Platform.WPF
 				return;
 
 			Control.TextAlignment = label.HorizontalTextAlignment.ToNativeTextAlignment();
+		}
+
+		void UpdateVerticalTextAlign()
+		{
+			if (Control == null)
+				return;
+
+			Label label = Element;
+			if (label == null)
+				return;
+
+			Control.VerticalAlignment = label.VerticalTextAlignment.ToNativeVerticalAlignment();
 		}
 
 		void UpdateColor()
@@ -173,7 +194,7 @@ namespace Xamarin.Forms.Platform.WPF
 			if (label != null)
 			{
 				if (label.FormattedText == null)
-					Control.Text = label.Text;
+					Control.Text = label.UpdateFormsText(label.Text, label.TextTransform);
 				else
 				{
 					FormattedString formattedText = label.FormattedText ?? label.Text;
@@ -195,5 +216,18 @@ namespace Xamarin.Forms.Platform.WPF
 			}
 		}
 
+		void UpdatePadding()
+		{
+			if(Control == null || Element == null)
+			{
+				return;
+			}
+
+			Control.Padding = new WThickness(
+					Element.Padding.Left,
+					Element.Padding.Top,
+					Element.Padding.Right,
+					Element.Padding.Bottom);
+		}
 	}
 }

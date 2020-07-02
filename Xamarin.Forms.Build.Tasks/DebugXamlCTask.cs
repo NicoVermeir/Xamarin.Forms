@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Rocks;
-
 using static Microsoft.Build.Framework.MessageImportance;
+using IOPath = System.IO.Path;
 
 namespace Xamarin.Forms.Build.Tasks
 {
@@ -28,7 +26,7 @@ namespace Xamarin.Forms.Build.Tasks
 			if (!string.IsNullOrEmpty(ReferencePath)) {
 				var paths = ReferencePath.Replace("//", "/").Split(';');
 				foreach (var p in paths) {
-					var searchpath = Path.GetDirectoryName(p);
+					var searchpath = IOPath.GetDirectoryName(p);
 					LoggingHelper.LogMessage(Low, $"{new string(' ', 2)}Adding searchpath {searchpath}");
 					resolver.AddSearchDirectory(searchpath);
 				}
@@ -113,8 +111,17 @@ namespace Xamarin.Forms.Build.Tasks
 						var br2 = Instruction.Create(OpCodes.Ldarg_0);
 						var ret = Instruction.Create(OpCodes.Ret);
 						il.Emit(OpCodes.Ldarg_0);
-						il.Emit(OpCodes.Callvirt,
-						        module.ImportReference(typeDef.BaseType.Resolve().GetConstructors().First(c => c.HasParameters == false)));
+						MethodReference baseCtor;
+						if (typeDef.BaseType.Resolve().GetConstructors().FirstOrDefault(c => c.HasParameters && c.Parameters.Count == 1 && c.Parameters[0].Name == "useCompiledXaml") is MethodDefinition baseCtorDef) {
+							baseCtor = module.ImportReference(baseCtorDef);
+							baseCtor = module.ImportReference(baseCtor.ResolveGenericParameters(typeDef.BaseType, module));
+							il.Emit(OpCodes.Ldarg_1);
+						}
+						else {
+							baseCtor = module.ImportReference(typeDef.BaseType.Resolve().GetConstructors().First(c => c.HasParameters == false));
+							baseCtor = module.ImportReference(baseCtor.ResolveGenericParameters(typeDef.BaseType, module));
+						}
+						il.Emit(OpCodes.Callvirt, baseCtor);
 
 						il.Emit(OpCodes.Nop);
 						il.Emit(OpCodes.Ldarg_1);

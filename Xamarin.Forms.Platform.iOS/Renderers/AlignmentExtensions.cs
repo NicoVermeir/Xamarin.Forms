@@ -21,7 +21,22 @@ namespace Xamarin.Forms.Platform.iOS
 					if (isLtr)
 						return UITextAlignment.Left;
 					else
-						return UITextAlignment.Natural;
+						return UITextAlignment.Right;
+			}
+		}
+
+		internal static UIControlContentVerticalAlignment ToNativeTextAlignment(this TextAlignment alignment)
+		{
+			switch (alignment)
+			{
+				case TextAlignment.Center:
+					return UIControlContentVerticalAlignment.Center;
+				case TextAlignment.End:
+					return UIControlContentVerticalAlignment.Bottom;
+				case TextAlignment.Start:
+					return UIControlContentVerticalAlignment.Top;
+				default:
+					return UIControlContentVerticalAlignment.Top;
 			}
 		}
 	}

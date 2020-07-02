@@ -5,14 +5,17 @@ using UIKit;
 
 namespace Xamarin.Forms.Platform.iOS
 {
-	public class SelectableItemsViewController : ItemsViewController
+	public class SelectableItemsViewController<TItemsView> : StructuredItemsViewController<TItemsView>
+		where TItemsView : SelectableItemsView
 	{
-		protected readonly SelectableItemsView SelectableItemsView;
-
-		public SelectableItemsViewController(SelectableItemsView selectableItemsView, ItemsViewLayout layout) 
+		public SelectableItemsViewController(TItemsView selectableItemsView, ItemsViewLayout layout) 
 			: base(selectableItemsView, layout)
 		{
-			SelectableItemsView = selectableItemsView;
+		}
+
+		protected override UICollectionViewDelegateFlowLayout CreateDelegator()
+		{
+			return new SelectableItemsViewDelegator<TItemsView, SelectableItemsViewController<TItemsView>>(ItemsViewLayout, this);
 		}
 
 		// _Only_ called if the user initiates the selection change; will not be called for programmatic selection
@@ -31,29 +34,44 @@ namespace Xamarin.Forms.Platform.iOS
 		internal void SelectItem(object selectedItem)
 		{
 			var index = GetIndexForItem(selectedItem);
-			CollectionView.SelectItem(index, true, UICollectionViewScrollPosition.None);
+
+			if (index.Section > -1 && index.Item > -1)
+			{
+				CollectionView.SelectItem(index, true, UICollectionViewScrollPosition.None);
+			}
+		}
+
+		// Called by Forms to clear the native selection
+		internal void ClearSelection()
+		{
+			var selectedItemIndexes = CollectionView.GetIndexPathsForSelectedItems();
+
+			foreach (var index in selectedItemIndexes)
+			{
+				CollectionView.DeselectItem(index, true);
+			}
 		}
 
 		void FormsSelectItem(NSIndexPath indexPath)
 		{
-			var mode = SelectableItemsView.SelectionMode;
+			var mode = ItemsView.SelectionMode;
 
 			switch (mode)
 			{
 				case SelectionMode.None:
 					break;
 				case SelectionMode.Single:
-					SelectableItemsView.SelectedItem = GetItemAtIndex(indexPath);
+					ItemsView.SelectedItem = GetItemAtIndex(indexPath);
 					break;
 				case SelectionMode.Multiple:
-					SelectableItemsView.SelectedItems.Add(GetItemAtIndex(indexPath));
+					ItemsView.SelectedItems.Add(GetItemAtIndex(indexPath));
 					break;
 			}
 		}
 
 		void FormsDeselectItem(NSIndexPath indexPath)
 		{
-			var mode = SelectableItemsView.SelectionMode;
+			var mode = ItemsView.SelectionMode;
 
 			switch (mode)
 			{
@@ -62,30 +80,35 @@ namespace Xamarin.Forms.Platform.iOS
 				case SelectionMode.Single:
 					break;
 				case SelectionMode.Multiple:
-					SelectableItemsView.SelectedItems.Remove(GetItemAtIndex(indexPath));
+					ItemsView.SelectedItems.Remove(GetItemAtIndex(indexPath));
 					break;
 			}
 		}
 
 		internal void UpdateNativeSelection()
 		{
-			if (SelectableItemsView == null)
+			if (ItemsView == null)
 			{
 				return;
 			}
 
-			var mode = SelectableItemsView.SelectionMode;
+			var mode = ItemsView.SelectionMode;
 
 			switch (mode)
 			{
 				case SelectionMode.None:
 					return;
 				case SelectionMode.Single:
-					var selectedItem = SelectableItemsView.SelectedItem;
+					var selectedItem = ItemsView.SelectedItem;
 
 					if (selectedItem != null)
 					{
 						SelectItem(selectedItem);
+					}
+					else
+					{
+						// SelectedItem has been set to null; if an item is selected, we need to de-select it
+						ClearSelection();
 					}
 				
 					return;
@@ -97,7 +120,7 @@ namespace Xamarin.Forms.Platform.iOS
 
 		internal void UpdateSelectionMode()
 		{
-			var mode = SelectableItemsView.SelectionMode;
+			var mode = ItemsView.SelectionMode;
 
 			switch (mode)
 			{
@@ -120,7 +143,7 @@ namespace Xamarin.Forms.Platform.iOS
 
 		void SynchronizeNativeSelectionWithSelectedItems()
 		{
-			var selectedItems = SelectableItemsView.SelectedItems;
+			var selectedItems = ItemsView.SelectedItems;
 			var selectedIndexPaths = CollectionView.GetIndexPathsForSelectedItems();
 
 			foreach (var path in selectedIndexPaths)

@@ -194,6 +194,8 @@ namespace Xamarin.Forms.Core.UnitTests
 			bindable2.BindingContext = new MockViewModel();
 			Assert.Throws<InvalidOperationException>(() => bindable2.SetBinding(property, binding),
 				"Binding allowed reapplication with a different context");
+
+			GC.KeepAlive(bindable);
 		}
 
 		[Test, Category("[Binding] Set Value")]
@@ -614,7 +616,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			bindable.SetBinding(MockBindable.TextProperty, binding);
 
 			bool invokeOnMainThreadWasCalled = false;
-			Device.PlatformServices = new MockPlatformServices(a => invokeOnMainThreadWasCalled = true);
+			Device.PlatformServices = new MockPlatformServices(a => invokeOnMainThreadWasCalled = true, isInvokeRequired: true);
 
 			vm.Text = "updated";
 

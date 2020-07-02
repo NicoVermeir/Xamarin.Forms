@@ -8,6 +8,8 @@ using Xamarin.Forms.Internals;
 using MixedContentHandling = Android.Webkit.MixedContentHandling;
 using AWebView = Android.Webkit.WebView;
 using System.Threading.Tasks;
+using System.Net;
+using System.Collections.Generic;
 
 namespace Xamarin.Forms.Platform.Android
 {
@@ -15,16 +17,17 @@ namespace Xamarin.Forms.Platform.Android
 	{
 		public const string AssetBaseUrl = "file:///android_asset/";
 
+		WebNavigationEvent _eventState;
 		WebViewClient _webViewClient;
 		FormsWebChromeClient _webChromeClient;
-
+		bool _isDisposed = false;
 		protected internal IWebViewController ElementController => Element;
 		protected internal bool IgnoreSourceChanges { get; set; }
 		protected internal string UrlCanceled { get; set; }
 
 		public WebViewRenderer(Context context) : base(context)
 		{
-			AutoPackage = false;
+			AutoPackage = false;			
 		}
 
 		[Obsolete("This constructor is obsolete as of version 2.5. Please use WebViewRenderer(Context) instead.")]
@@ -36,13 +39,22 @@ namespace Xamarin.Forms.Platform.Android
 
 		public void LoadHtml(string html, string baseUrl)
 		{
+			_eventState = WebNavigationEvent.NewPage;
 			Control.LoadDataWithBaseURL(baseUrl ?? AssetBaseUrl, html, "text/html", "UTF-8", null);
 		}
 
 		public void LoadUrl(string url)
 		{
-			if (!SendNavigatingCanceled(url))
+			LoadUrl(url, true);
+		}
+
+		void LoadUrl(string url, bool fireNavigatingCanceled)
+		{
+			if (!fireNavigatingCanceled || !SendNavigatingCanceled(url))
+			{
+				_eventState = WebNavigationEvent.NewPage;
 				Control.LoadUrl(url);
+			}	
 		}
 
 		protected internal bool SendNavigatingCanceled(string url)
@@ -53,7 +65,8 @@ namespace Xamarin.Forms.Platform.Android
 			if (url == AssetBaseUrl)
 				return false;
 
-			var args = new WebNavigatingEventArgs(WebNavigationEvent.NewPage, new UrlWebViewSource { Url = url }, url);
+			var args = new WebNavigatingEventArgs(_eventState, new UrlWebViewSource { Url = url }, url);
+			SyncNativeCookies(url);
 			ElementController.SendNavigating(args);
 			UpdateCanGoBackForward();
 			UrlCanceled = args.Cancel ? null : url;
@@ -62,6 +75,10 @@ namespace Xamarin.Forms.Platform.Android
 
 		protected override void Dispose(bool disposing)
 		{
+			if (_isDisposed)
+				return;
+
+			_isDisposed = true;
 			if (disposing)
 			{
 				if (Element != null)
@@ -72,6 +89,7 @@ namespace Xamarin.Forms.Platform.Android
 					ElementController.GoBackRequested -= OnGoBackRequested;
 					ElementController.GoForwardRequested -= OnGoForwardRequested;
 					ElementController.ReloadRequested -= OnReloadRequested;
+					ElementController.EvaluateJavaScriptRequested -= OnEvaluateJavaScriptRequested;
 
 					_webViewClient?.Dispose();
 					_webChromeClient?.Dispose();
@@ -101,6 +119,11 @@ namespace Xamarin.Forms.Platform.Android
 			return new AWebView(Context);
 		}
 
+		internal WebNavigationEvent GetCurrentWebNavigationEvent()
+		{
+			return _eventState;
+		}
+
 		protected override void OnElementChanged(ElementChangedEventArgs<WebView> e)
 		{
 			base.OnElementChanged(e);
@@ -118,6 +141,12 @@ namespace Xamarin.Forms.Platform.Android
 				_webChromeClient = GetFormsWebChromeClient();
 				_webChromeClient.SetContext(Context);
 				webView.SetWebChromeClient(_webChromeClient);
+
+				if(Context.IsDesignerContext())
+				{
+					SetNativeControl(webView);
+					return;
+				}
 
 				webView.Settings.JavaScriptEnabled = true;
 				webView.Settings.DomStorageEnabled = true;
@@ -172,6 +201,132 @@ namespace Xamarin.Forms.Platform.Android
 			}
 		}
 
+		HashSet<string> _loadedCookies = new HashSet<string>();
+
+		Uri CreateUriForCookies(string url)
+		{
+			if (url == null)
+				return null;
+
+			Uri uri;
+
+			if (url.Length > 2000)
+				url = url.Substring(0, 2000);
+
+			if (Uri.TryCreate(url, UriKind.Absolute, out uri))
+			{
+				if (String.IsNullOrWhiteSpace(uri.Host))
+					return null;
+
+				return uri;
+			}
+
+			return null;
+		}
+
+		CookieCollection GetCookiesFromNativeStore(string url)
+		{
+			CookieContainer existingCookies = new CookieContainer();
+			var cookieManager = CookieManager.Instance;
+			var currentCookies = cookieManager.GetCookie(url);
+			var uri = CreateUriForCookies(url);
+
+			if (currentCookies != null)
+			{
+				foreach(var cookie in currentCookies.Split(';'))
+					existingCookies.SetCookies(uri, cookie);
+			}
+
+			return existingCookies.GetCookies(uri);
+		}
+
+		void InitialCookiePreloadIfNecessary(string url)
+		{
+			var myCookieJar = Element.Cookies;
+			if (myCookieJar == null)
+				return;
+
+			var uri = CreateUriForCookies(url);
+			if (uri == null)
+				return;
+
+			if (!_loadedCookies.Add(uri.Host))
+				return;
+
+			var cookies = myCookieJar.GetCookies(uri);
+
+			if (cookies != null)
+			{
+				var existingCookies = GetCookiesFromNativeStore(url);
+				foreach (Cookie cookie in existingCookies)
+				{
+					if (cookies[cookie.Name] == null)
+						myCookieJar.Add(cookie);
+				}
+			}
+		}
+
+		internal void SyncNativeCookiesToElement(string url)
+		{
+			var myCookieJar = Element.Cookies;
+			if (myCookieJar == null)
+				return;
+
+			var uri = CreateUriForCookies(url);
+			if (uri == null)
+				return;
+
+			var cookies = myCookieJar.GetCookies(uri);
+			var retrieveCurrentWebCookies = GetCookiesFromNativeStore(url);
+
+			foreach (Cookie cookie in cookies)
+			{
+				var nativeCookie = retrieveCurrentWebCookies[cookie.Name];
+				if (nativeCookie == null)
+					cookie.Expired = true;
+				else
+					cookie.Value = nativeCookie.Value;
+			}
+
+			SyncNativeCookies(url);
+		}
+
+		void SyncNativeCookies(string url)
+		{
+			var uri = CreateUriForCookies(url);
+			if (uri == null)
+				return;
+
+			var myCookieJar = Element.Cookies;
+			if (myCookieJar == null)
+				return;
+
+			InitialCookiePreloadIfNecessary(url);
+			var cookies = myCookieJar.GetCookies(uri);
+			if (cookies == null)
+				return;
+
+			var retrieveCurrentWebCookies = GetCookiesFromNativeStore(url);
+
+			var cookieManager = CookieManager.Instance;
+			cookieManager.SetAcceptCookie(true);
+			for (var i = 0; i < cookies.Count; i++)
+			{
+				var cookie = cookies[i];
+				var cookieString = cookie.ToString();
+				cookieManager.SetCookie(cookie.Domain, cookieString);
+			}
+
+			foreach (Cookie cookie in retrieveCurrentWebCookies)
+			{
+				if (cookies[cookie.Name] != null)
+					continue;
+
+				var cookieString = $"{cookie.Name}=; max-age=0;expires=Sun, 31 Dec 2017 00:00:00 UTC";
+				cookieManager.SetCookie(cookie.Domain, cookieString);
+			}
+		}
+
 		void Load()
 		{
 			if (IgnoreSourceChanges)
@@ -184,7 +339,7 @@ namespace Xamarin.Forms.Platform.Android
 
 		void OnEvalRequested(object sender, EvalRequested eventArg)
 		{
-			LoadUrl("javascript:" + eventArg.Script);
+			LoadUrl("javascript:" + eventArg.Script, false);
 		}
 
 		async Task<string> OnEvaluateJavaScriptRequested(string script)
@@ -199,7 +354,10 @@ namespace Xamarin.Forms.Platform.Android
 		void OnGoBackRequested(object sender, EventArgs eventArgs)
 		{
 			if (Control.CanGoBack())
+			{
+				_eventState = WebNavigationEvent.Back;
 				Control.GoBack();
+			}	
 
 			UpdateCanGoBackForward();
 		}
@@ -207,13 +365,18 @@ namespace Xamarin.Forms.Platform.Android
 		void OnGoForwardRequested(object sender, EventArgs eventArgs)
 		{
 			if (Control.CanGoForward())
+			{
+				_eventState = WebNavigationEvent.Forward;
 				Control.GoForward();
+			}	
 
 			UpdateCanGoBackForward();
 		}
 
 		void OnReloadRequested(object sender, EventArgs eventArgs)
 		{
+			SyncNativeCookies(Control.Url?.ToString());
+			_eventState = WebNavigationEvent.Refresh;
 			Control.Reload();
 		}
 
@@ -227,7 +390,7 @@ namespace Xamarin.Forms.Platform.Android
 
 		void UpdateMixedContentMode()
 		{
-			if (Control != null && ((int)Build.VERSION.SdkInt >= 21))
+			if (Control != null && ((int)Forms.SdkInt >= 21))
 			{
 				Control.Settings.MixedContentMode = (MixedContentHandling)Element.OnThisPlatform().MixedContentMode();
 			}
@@ -235,14 +398,14 @@ namespace Xamarin.Forms.Platform.Android
 
 		void UpdateEnableZoomControls()
 		{
-			var value = Element.OnThisPlatform().EnableZoomControls();
+			var value = Element.OnThisPlatform().ZoomControlsEnabled();
 			Control.Settings.SetSupportZoom(value);
 			Control.Settings.BuiltInZoomControls = value;
 		}
 
 		void UpdateDisplayZoomControls()
 		{
-			Control.Settings.DisplayZoomControls = Element.OnThisPlatform().DisplayZoomControls();
+			Control.Settings.DisplayZoomControls = Element.OnThisPlatform().ZoomControlsDisplayed();
 		}
 
 		class JavascriptResult : Java.Lang.Object, IValueCallback

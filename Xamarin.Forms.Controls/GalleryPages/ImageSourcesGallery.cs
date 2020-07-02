@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 
 namespace Xamarin.Forms.Controls
 {
@@ -33,7 +34,7 @@ namespace Xamarin.Forms.Controls
 				new ImageSourcePickerItem
 				{
 					Text = "Stream",
-					Getter = () => ImageSource.FromStream(() => typeof(App).Assembly.GetManifestResourceStream("Xamarin.Forms.Controls.coffee.png"))
+					Getter = () => ImageSource.FromStream(() => typeof(App).GetTypeInfo().Assembly.GetManifestResourceStream("Xamarin.Forms.Controls.coffee.png"))
 				},
 				new ImageSourcePickerItem
 				{
@@ -112,7 +113,7 @@ namespace Xamarin.Forms.Controls
 						Spacing = 10,
 						Children =
 						{
-							CreateImageSourcePicker("Change Title Icon", getter => NavigationPage.SetTitleIcon(this, getter())),
+							CreateImageSourcePicker("Change Title Icon", getter => NavigationPage.SetTitleIconImageSource(this, getter())),
 							new Button
 							{
 								Text = "Page & Toolbar",

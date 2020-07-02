@@ -137,11 +137,9 @@ namespace Xamarin.Forms.Build.Tasks
 		{
 			var module = context.Body.Method.Module;
 			var str = (string)node.Value;
-
 			//If the TypeConverter has a ProvideCompiledAttribute that can be resolved, shortcut this
-			var compiledConverterName = typeConverter?.GetCustomAttribute(module, ("Xamarin.Forms.Core", "Xamarin.Forms.Xaml", "ProvideCompiledAttribute"))?.ConstructorArguments?.First().Value as string;
 			Type compiledConverterType;
-			if (compiledConverterName != null && (compiledConverterType = Type.GetType (compiledConverterName)) != null) {
+			if (typeConverter?.GetCustomAttribute(module, ("Xamarin.Forms.Core", "Xamarin.Forms.Xaml", "ProvideCompiledAttribute"))?.ConstructorArguments?.First().Value is string compiledConverterName && (compiledConverterType = Type.GetType (compiledConverterName)) != null) {
 				var compiledConverter = Activator.CreateInstance (compiledConverterType);
 				var converter = typeof(ICompiledTypeConverter).GetMethods ().FirstOrDefault (md => md.Name == "ConvertFromString");
 				IEnumerable<Instruction> instructions;
@@ -149,6 +147,10 @@ namespace Xamarin.Forms.Build.Tasks
 					instructions = (IEnumerable<Instruction>)converter.Invoke(compiledConverter, new object[] {
 					node.Value as string, context, node as BaseNode});
 				} catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is XamlParseException) {
+					throw tie.InnerException;
+				}
+				catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is BuildException)
+				{
 					throw tie.InnerException;
 				}
 				foreach (var i in instructions)
@@ -159,8 +161,7 @@ namespace Xamarin.Forms.Build.Tasks
 			}
 
 			//If there's a [TypeConverter], use it
-			if (typeConverter != null)
-			{
+			if (typeConverter != null) {
 				var isExtendedConverter = typeConverter.ImplementsInterface(module.ImportReference(("Xamarin.Forms.Core", "Xamarin.Forms", "IExtendedTypeConverter")));
 				var typeConverterCtorRef = module.ImportCtorReference(typeConverter, paramCount: 0);
 				var convertFromInvariantStringDefinition = isExtendedConverter
@@ -169,11 +170,11 @@ namespace Xamarin.Forms.Build.Tasks
 						.Methods.FirstOrDefault(md => md.Name == "ConvertFromInvariantString" && md.Parameters.Count == 2)
 					: typeConverter.ResolveCached()
 						.AllMethods()
-						.FirstOrDefault(md => md.Name == "ConvertFromInvariantString" && md.Parameters.Count == 1);
+						.FirstOrDefault(md => md.methodDef.Name == "ConvertFromInvariantString" && md.methodDef.Parameters.Count == 1).methodDef;
 				var convertFromInvariantStringReference = module.ImportReference(convertFromInvariantStringDefinition);
 
-				yield return Instruction.Create(OpCodes.Newobj, typeConverterCtorRef);
-				yield return Instruction.Create(OpCodes.Ldstr, node.Value as string);
+				yield return Create(Newobj, typeConverterCtorRef);
+				yield return Create(Ldstr, node.Value as string);
 
 				if (isExtendedConverter)
 				{
@@ -323,8 +324,7 @@ namespace Xamarin.Forms.Build.Tasks
 							b |= (byte)field.Constant;
 							break;
 						case "System.SByte":
-							if (found)
-								throw new XamlParseException($"Multi-valued enums are not valid on sbyte enum types", lineInfo);
+								if (found) throw new BuildException(BuildExceptionCode.SByteEnums, lineInfo, null);
 							sb = (sbyte)field.Constant;
 							break;
 						case "System.Int16":
@@ -352,8 +352,8 @@ namespace Xamarin.Forms.Build.Tasks
 			}
 
 			if (!found)
-				throw new XamlParseException($"Enum value not found for {value}", lineInfo);
-				
+				throw new BuildException(BuildExceptionCode.EnumValueMissing, lineInfo, null, value);
+
 			switch (typeRef.FullName) {
 			case "System.Byte":
 				return Instruction.Create(OpCodes.Ldc_I4, (int)b);
@@ -372,7 +372,7 @@ namespace Xamarin.Forms.Build.Tasks
 			case "System.UInt64":
 				return Instruction.Create(OpCodes.Ldc_I4, (ulong)ul);
 			default:
-				throw new XamlParseException($"Enum value not found for {value}", lineInfo);
+				throw new BuildException(BuildExceptionCode.EnumValueMissing, lineInfo, null, value);
 			}
 		}
 

@@ -14,6 +14,7 @@ namespace Xamarin.Forms.Controls.Issues
 {
 #if UITEST
 	[NUnit.Framework.Category(Core.UITests.UITestCategories.UwpIgnore)]
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
 #endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Github, 1414, "InvalidCastException when scrolling and refreshing TableView", PlatformAffected.iOS)]
@@ -76,12 +77,10 @@ namespace Xamarin.Forms.Controls.Issues
 
 #if UITEST
 		[Test]
-		public void Issue1414Test()
+		public void InvalidCastExceptionWhenScrollingAndRefreshingTableView()
 		{
 			RunningApp.Screenshot("Start G1414");
-			RunningApp.WaitForElement(q => q.Marked("TableView"));
-
-			var tableFrame = RunningApp.Query(q => q.Marked("TableView"))[0].Rect;
+			var tableFrame = RunningApp.WaitForElement(q => q.Marked("TableView"))[0].Rect;
 			RunningApp.ScrollForElement("* marked:'Row-4-24'", new Drag(tableFrame, Drag.Direction.BottomToTop, Drag.DragLength.Long));
 			RunningApp.Screenshot("Scrolled to end without crashing!");
 			RunningApp.ScrollForElement("* marked:'Row-0-0'", new Drag(tableFrame, Drag.Direction.TopToBottom, Drag.DragLength.Long));

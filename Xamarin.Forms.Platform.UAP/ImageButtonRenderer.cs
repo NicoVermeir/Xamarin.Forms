@@ -1,14 +1,13 @@
 using System;
 using System.ComponentModel;
-using Windows.UI.Xaml;
-using Windows.UI.Xaml.Media;
-using Windows.UI.Xaml.Media.Imaging;
-using Xamarin.Forms.Internals;
-using WThickness = Windows.UI.Xaml.Thickness;
-using WImage = Windows.UI.Xaml.Controls.Image;
-using Windows.UI.Xaml.Input;
 using System.Threading.Tasks;
-using System.Diagnostics;
+using Windows.UI.Xaml;
+using Windows.UI.Xaml.Input;
+using Windows.UI.Xaml.Media;
+using Xamarin.Forms.Internals;
+using WImage = Windows.UI.Xaml.Controls.Image;
+using WStretch = Windows.UI.Xaml.Media.Stretch;
+using WThickness = Windows.UI.Xaml.Thickness;
 
 namespace Xamarin.Forms.Platform.UWP
 {
@@ -54,12 +53,15 @@ namespace Xamarin.Forms.Platform.UWP
 
 			_measured = true;
 
-			// we have to include the padding, otherwise the image is smaller than expected
-			var padding = new Size(Element.Padding.HorizontalThickness, Element.Padding.VerticalThickness);
+			// The size needs to be the entire size needed for the button (including padding, borders, etc.)
+			// Not just the size of the image.
+			var btn = Control;
+			btn.Measure(new Windows.Foundation.Size(widthConstraint, heightConstraint));
 
-			return new SizeRequest(_image.Source.GetImageSourceSize() + padding);
+			var size = new Size(Math.Ceiling(btn.DesiredSize.Width), Math.Ceiling(btn.DesiredSize.Height));
+
+			return new SizeRequest(size);
 		}
-
 
 		protected async override void OnElementChanged(ElementChangedEventArgs<ImageButton> e)
 		{
@@ -78,7 +80,7 @@ namespace Xamarin.Forms.Platform.UWP
 					{
 						VerticalAlignment = VerticalAlignment.Center,
 						HorizontalAlignment = HorizontalAlignment.Center,
-						Stretch = Stretch.Uniform,
+						Stretch = WStretch.Uniform,
 					};
 
 					_image.ImageOpened += OnImageOpened;
@@ -109,7 +111,9 @@ namespace Xamarin.Forms.Platform.UWP
 
 				if (Element.IsSet(ImageButton.CornerRadiusProperty) && Element.CornerRadius != (int)ImageButton.CornerRadiusProperty.DefaultValue)
 					UpdateBorderRadius();
-				if (Element.IsSet(Button.PaddingProperty) && Element.Padding != (Thickness)Button.PaddingProperty.DefaultValue)
+
+				// By default Button loads width padding 8, 4, 8 ,4
+				if (Element.IsSet(Button.PaddingProperty))
 					UpdatePadding();
 
 				await TryUpdateSource().ConfigureAwait(false);
@@ -147,7 +151,7 @@ namespace Xamarin.Forms.Platform.UWP
 		{
 			if (_measured)
 			{
-				ImageElementManager.RefreshImage(Element);
+				ImageElementManager.RefreshImage(this);
 			}
 
 			Element?.SetIsLoading(false);
@@ -205,7 +209,8 @@ namespace Xamarin.Forms.Platform.UWP
 		{
 			_image.Margin = new WThickness(0);
 
-			Control.Padding = new WThickness(
+			// Apply the padding to the containing button, not the image
+			_formsButton.Padding = new WThickness(
 					Element.Padding.Left,
 					Element.Padding.Top,
 					Element.Padding.Right,

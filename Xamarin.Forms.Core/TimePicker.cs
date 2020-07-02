@@ -11,6 +11,8 @@ namespace Xamarin.Forms
 
 		public static readonly BindableProperty TextColorProperty = TextElement.TextColorProperty;
 
+		public static readonly BindableProperty CharacterSpacingProperty = TextElement.CharacterSpacingProperty;
+
 		public static readonly BindableProperty TimeProperty = BindableProperty.Create(nameof(Time), typeof(TimeSpan), typeof(TimePicker), new TimeSpan(0), BindingMode.TwoWay, (bindable, value) =>
 		{
 			var time = (TimeSpan)value;
@@ -22,6 +24,8 @@ namespace Xamarin.Forms
 		public static readonly BindableProperty FontSizeProperty = FontElement.FontSizeProperty;
 
 		public static readonly BindableProperty FontAttributesProperty = FontElement.FontAttributesProperty;
+
+		public static readonly BindableProperty TextTransformProperty = TextElement.TextTransformProperty;
 
 		readonly Lazy<PlatformConfigurationRegistry<TimePicker>> _platformConfigurationRegistry;
 
@@ -40,6 +44,12 @@ namespace Xamarin.Forms
 		{
 			get { return (Color)GetValue(TextElement.TextColorProperty); }
 			set { SetValue(TextElement.TextColorProperty, value); }
+		}
+
+		public double CharacterSpacing
+		{
+			get { return (double)GetValue(TextElement.CharacterSpacingProperty); }
+			set { SetValue(TextElement.CharacterSpacingProperty, value); }
 		}
 
 		public TimeSpan Time
@@ -67,6 +77,15 @@ namespace Xamarin.Forms
 			set { SetValue(FontSizeProperty, value); }
 		}
 
+		public TextTransform TextTransform
+		{
+			get => (TextTransform)GetValue(TextTransformProperty);
+			set => SetValue(TextTransformProperty, value);
+		}
+
+		public virtual string UpdateFormsText(string source, TextTransform textTransform)
+			=> TextTransformUtilites.GetTransformedText(source, textTransform);
+
 		void IFontElement.OnFontFamilyChanged(string oldValue, string newValue) =>
 			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
 
@@ -90,5 +109,13 @@ namespace Xamarin.Forms
 		void ITextElement.OnTextColorPropertyChanged(Color oldValue, Color newValue)
 		{
 		}
+
+		void ITextElement.OnCharacterSpacingPropertyChanged(double oldValue, double newValue)
+		{
+			InvalidateMeasure();
+		}
+
+		void ITextElement.OnTextTransformChanged(TextTransform oldValue, TextTransform newValue)
+			=> InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
 	}
 }
